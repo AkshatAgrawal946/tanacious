@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # tanacious
 =======
 # Campus Energy – Prototype 1
