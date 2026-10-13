@@ -10,7 +10,7 @@ This repository contains the baseline data integration and analysis layer for th
 * **Visualization:** Matplotlib, Jupyter Notebooks
 
 ## 🚀 What is Implemented Now
-* **Synthetic Data Generator (`src/generate_data.py`):** Generates simulated hourly kWh readings for campus buildings, incorporating random multi-day gaps to mimic "monthly-only" unmetered constraints.
+* **Synthetic Data Generator (`src/generate_data.py`):** Generates 15-minute kWh readings for academic blocks and labs (with short sensor dropouts) and monthly-only totals for hostels and libraries, plus a hidden 15-minute ground truth for the monthly-only buildings to evaluate disaggregation.
 * **Baseline EDA (`notebooks/01_baseline_eda.ipynb`):** Resamples time-series data and isolates the 4 PM – 8 PM window to provide a demand-spike chart.
 
 ## 🔜 Proposed Next Steps (Round 2 Build)
