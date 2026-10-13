@@ -1,14 +1,22 @@
-# tanacious
-=======
-# Campus Energy – Prototype 1
+# ⚡ The Missing Meter: Prototype
 
-```
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python src/generate_data.py          # writes data/raw/*.csv
-jupyter notebook notebooks/01_baseline_eda.ipynb
-```
+> **AI Synergy Hackathon 2026** | **Theme:** Energy & Environment (The 4 PM Spike)
 
-- `src/generate_data.py` – synthetic hourly kWh for 5 buildings (Jun–Aug), with random multi-day gaps; true monthly totals saved separately.
-- `notebooks/01_baseline_eda.ipynb` – resampling + 4–8 PM demand-spike chart.
->>>>>>> f9c9fcf (first commit)
+## 📖 Overview
+This repository contains the baseline data integration and analysis layer for the "Missing Meter" problem. It provides a controlled test bed for generating synthetic campus energy records, mimicking incomplete monthly feeds, and performing Exploratory Data Analysis (EDA) to visualize the critical 4 PM to 8 PM demand spike before applying predictive models.
+
+## ⚙️ Current Tech Stack
+* **Data Processing & Analysis:** Python, Pandas, NumPy
+* **Visualization:** Matplotlib, Jupyter Notebooks
+
+## 🚀 What is Implemented Now
+* **Synthetic Data Generator (`src/generate_data.py`):** Generates simulated hourly kWh readings for campus buildings, incorporating random multi-day gaps to mimic "monthly-only" unmetered constraints.
+* **Baseline EDA (`notebooks/01_baseline_eda.ipynb`):** Resamples time-series data and isolates the 4 PM – 8 PM window to provide a demand-spike chart.
+
+## 🔜 Proposed Next Steps (Round 2 Build)
+* **Machine Learning Imputation:** Train and validate a regression model (Scikit-Learn/XGBoost) to infer the missing 15-minute intervals, constrained by known billing totals.
+* **Interactive Dashboard:** Build a Streamlit interface to give facilities teams a verified 4–8 PM building-level demand profile for targeted planning.
+
+---
+
+**Done by:** Tejas S, Nikunj Negi, Akshat Agrawal, Adnan Bim Amjad
