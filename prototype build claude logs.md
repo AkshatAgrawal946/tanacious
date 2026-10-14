@@ -233,10 +233,4 @@ sed -i '' 's|peak_share = campus.loc\[16:19\]  # hours starting 4,5,6,7 PM.sum()
 - Draws a Matplotlib chart of average demand by hour of day, campus total and per building, with the 4–8 PM window shaded.
 - On the generated data, 4–8 PM accounts for **26.0%** of daily campus consumption.
 
-The folder isn't a git repo, so nothing was committed. To run it:
-```
-cd /Users/akshatagrawal/Projects/tanacious/prot1 && source .venv/bin/activate
-python src/generate_data.py && jupyter notebook notebooks/01_baseline_eda.ipynb
-```
-
 result: Prototype project created in `prot1/`: folder structure and `requirements.txt`, a generator for 3 months of hourly data for 5 buildings with gaps and monthly totals, and a notebook charting the 4–8 PM peak (26% of daily use); all of it tested and running.
