@@ -1,0 +1,92 @@
+"""Interpretable baseline reconstruction with a hard billing constraint."""
+import numpy as np
+import pandas as pd
+
+
+def _type_modifier(building_type: str, hour: np.ndarray) -> np.ndarray:
+    """Small transparent priors used only when the target type has no smart meter."""
+    modifier = np.ones(len(hour))
+    if building_type == "hostel":
+        modifier += 0.22 * ((hour >= 17) & (hour < 23)) + 0.08 * ((hour < 7))
+    elif building_type == "library":
+        modifier += 0.25 * ((hour >= 9) & (hour < 20))
+    elif building_type == "lab":
+        modifier += 0.15 * ((hour >= 9) & (hour < 18))
+    return modifier
+
+
+def _reference_shape(interval: pd.DataFrame, timestamps: pd.DatetimeIndex, building_type: str) -> np.ndarray:
+    observed = interval.dropna(subset=["kWh_consumed"]).copy()
+    if observed.empty:
+        raise ValueError("at least one observed smart-meter value is required")
+    observed["slot"] = observed["timestamp"].dt.dayofweek * 96 + observed["timestamp"].dt.hour * 4 + observed["timestamp"].dt.minute // 15
+    profile = observed.groupby("slot")["kWh_consumed"].mean()
+    slots = timestamps.dayofweek * 96 + timestamps.hour * 4 + timestamps.minute // 15
+    generic = float(observed["kWh_consumed"].mean())
+    shape = np.asarray([profile.get(slot, generic) for slot in slots], dtype=float)
+    temp_effect = 1 + 0.015 * np.clip(np.asarray(timestamps.hour) - 12, 0, 6)
+    return np.clip(shape * temp_effect * _type_modifier(building_type, np.asarray(timestamps.hour)), 1e-6, None)
+
+
+def reconcile_monthly(shape: np.ndarray, monthly_kwh: float) -> np.ndarray:
+    """Scale a positive shape so its interval values sum exactly to the known bill."""
+    shape = np.asarray(shape, dtype=float)
+    if monthly_kwh < 0 or not np.isfinite(monthly_kwh):
+        raise ValueError("monthly_kwh must be a finite non-negative number")
+    if np.any(shape < 0) or not np.isfinite(shape).all() or shape.sum() <= 0:
+        raise ValueError("shape must be finite, non-negative, and have positive mass")
+    reconciled = shape * (monthly_kwh / shape.sum())
+    # Correct float drift on the final interval; this makes the accounting invariant explicit.
+    reconciled[-1] += monthly_kwh - reconciled.sum()
+    return reconciled
+
+
+def reconstruct_building_month(interval: pd.DataFrame, bills: pd.DataFrame, building: str, month: str) -> pd.DataFrame:
+    bill = bills[(bills["building"] == building) & (bills["month"].astype(str) == str(month))]
+    if len(bill) != 1:
+        raise ValueError(f"expected one bill for {building} in {month}")
+    building_type = bill.iloc[0]["building_type"]
+    monthly_kwh = float(bill.iloc[0]["monthly_kWh"])
+    period = pd.Period(str(month), freq="M")
+    timestamps = pd.date_range(period.start_time, period.end_time, freq="15min")
+    shape = _reference_shape(interval, timestamps, building_type)
+    result = pd.DataFrame({
+        "timestamp": timestamps, "building": building, "building_type": building_type,
+        "month": str(month), "kWh_consumed": reconcile_monthly(shape, monthly_kwh),
+        "is_observed": False, "is_reconstructed": True,
+    })
+    # Preserve actual smart-meter readings. Only the missing intervals are estimated, and
+    # their predicted shape is rescaled to the energy left after actual readings are used.
+    observed = interval.loc[
+        (interval["building"] == building)
+        & (interval["timestamp"].dt.to_period("M").astype(str) == str(month)),
+        ["timestamp", "kWh_consumed"],
+    ].dropna(subset=["kWh_consumed"])
+    if observed.empty:
+        return result
+
+    known = observed.set_index("timestamp")["kWh_consumed"]
+    observed_mask = result["timestamp"].isin(known.index)
+    observed_kwh = float(result.loc[observed_mask, "timestamp"].map(known).sum())
+    remaining_kwh = monthly_kwh - observed_kwh
+    if remaining_kwh < -0.01:
+        raise ValueError(
+            f"observed interval energy ({observed_kwh:.2f} kWh) exceeds the monthly bill "
+            f"({monthly_kwh:.2f} kWh) for {building} in {month}"
+        )
+    if observed_mask.all():
+        if abs(remaining_kwh) > 0.01:
+            raise ValueError(f"all intervals are observed but do not reconcile to the monthly bill for {building} in {month}")
+    else:
+        result.loc[~observed_mask, "kWh_consumed"] = reconcile_monthly(
+            result.loc[~observed_mask, "kWh_consumed"].to_numpy(), max(remaining_kwh, 0.0)
+        )
+    result.loc[observed_mask, "kWh_consumed"] = result.loc[observed_mask, "timestamp"].map(known)
+    result.loc[observed_mask, "is_observed"] = True
+    result.loc[observed_mask, "is_reconstructed"] = False
+    return result
+
+
+def reconstruct_all(interval: pd.DataFrame, bills: pd.DataFrame) -> pd.DataFrame:
+    frames = [reconstruct_building_month(interval, bills, row.building, str(row.month)) for row in bills.itertuples()]
+    return pd.concat(frames, ignore_index=True)

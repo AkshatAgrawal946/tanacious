@@ -1,0 +1,16 @@
+building,building_type,month,monthly_kWh
+B1_Hostel_A,hostel,2026-06,43885.963
+B1_Hostel_A,hostel,2026-07,45526.731999999996
+B1_Hostel_A,hostel,2026-08,45014.404
+B2_Hostel_B,hostel,2026-06,39647.378
+B2_Hostel_B,hostel,2026-07,40970.128
+B2_Hostel_B,hostel,2026-08,40504.858
+B3_Academic,academic,2026-06,30022.707
+B3_Academic,academic,2026-07,31136.087
+B3_Academic,academic,2026-08,30722.965
+B4_Library,library,2026-06,27633.288
+B4_Library,library,2026-07,28592.82
+B4_Library,library,2026-08,28219.796
+B5_Lab,lab,2026-06,42636.685
+B5_Lab,lab,2026-07,44092.095
+B5_Lab,lab,2026-08,43652.383
