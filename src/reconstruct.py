@@ -3,29 +3,49 @@ import numpy as np
 import pandas as pd
 
 
-def _type_modifier(building_type: str, hour: np.ndarray) -> np.ndarray:
-    """Small transparent priors used only when the target type has no smart meter."""
-    modifier = np.ones(len(hour))
-    if building_type == "hostel":
-        modifier += 0.22 * ((hour >= 17) & (hour < 23)) + 0.08 * ((hour < 7))
-    elif building_type == "library":
-        modifier += 0.25 * ((hour >= 9) & (hour < 20))
-    elif building_type == "lab":
-        modifier += 0.15 * ((hour >= 9) & (hour < 18))
-    return modifier
+# Coarse relative hourly load by building type: what a facilities team knows about when each
+# kind of building is busy. Academic blocks peak with afternoon classes, libraries and hostels
+# in the evening, labs stay high all day. Unknown types get a flat prior.
+TYPE_PRIORS = {
+    "academic": [.45] * 7 + [.5, .65, .8, .9, .9, .85, .95, 1., 1., .85, .65, .55, .5, .45, .45, .45, .45],
+    "library": [.4] * 7 + [.4, .5, .6, .65, .7, .7, .75, .8, .85, .9, .95, 1., 1., .95, .85, .7, .55],
+    "hostel": [.7, .65, .65, .65, .65, .7, .75, .75, .6, .5, .5, .5,
+               .55, .55, .55, .6, .7, .8, .9, 1., 1., .95, .9, .8],
+    "lab": [.65] * 7 + [.7, .8, .9, .95, .95, .95, .95, 1., 1., .95, .9, .85, .8, .75, .72, .7, .68],
+}
+
+
+def _type_prior(building_type: str, hour: np.ndarray) -> np.ndarray:
+    prior = TYPE_PRIORS.get(building_type, [1.0] * 24)
+    return np.interp(hour, np.arange(25), prior + prior[:1])
+
+
+def _type_modifier(building_type: str, reference_types: pd.Series, hour: np.ndarray) -> np.ndarray:
+    """Re-time the reference buildings' profile to the target type's daily pattern.
+
+    Used only when the target type has no smart meter: the ratio moves load towards the hours
+    the target type is busy and away from the hours the metered references are busy."""
+    reference = np.mean([_type_prior(kind, hour) for kind in reference_types], axis=0)
+    return _type_prior(building_type, hour) / reference
 
 
 def _reference_shape(interval: pd.DataFrame, timestamps: pd.DatetimeIndex, building_type: str) -> np.ndarray:
     observed = interval.dropna(subset=["kWh_consumed"]).copy()
     if observed.empty:
         raise ValueError("at least one observed smart-meter value is required")
+    hour = np.asarray(timestamps.hour + timestamps.minute / 60, dtype=float)
+    same_type = observed[observed["building_type"] == building_type]
+    if same_type.empty:
+        modifier = _type_modifier(building_type, observed.groupby("building")["building_type"].first(), hour)
+    else:
+        observed, modifier = same_type.copy(), np.ones(len(hour))
     observed["slot"] = observed["timestamp"].dt.dayofweek * 96 + observed["timestamp"].dt.hour * 4 + observed["timestamp"].dt.minute // 15
     profile = observed.groupby("slot")["kWh_consumed"].mean()
     slots = timestamps.dayofweek * 96 + timestamps.hour * 4 + timestamps.minute // 15
     generic = float(observed["kWh_consumed"].mean())
     shape = np.asarray([profile.get(slot, generic) for slot in slots], dtype=float)
-    temp_effect = 1 + 0.015 * np.clip(np.asarray(timestamps.hour) - 12, 0, 6)
-    return np.clip(shape * temp_effect * _type_modifier(building_type, np.asarray(timestamps.hour)), 1e-6, None)
+    # Cooling is already in the metered reference profile, so no separate temperature uplift.
+    return np.clip(shape * modifier, 1e-6, None)
 
 
 def reconcile_monthly(shape: np.ndarray, monthly_kwh: float) -> np.ndarray:

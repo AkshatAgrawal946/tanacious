@@ -90,7 +90,7 @@ with left:
 with right:
     drivers = pd.DataFrame({
         "Driver": ["Building type", "Calendar", "Temperature proxy", "Monthly bill"],
-        "How it is used": [str(bill.building_type), "weekday/weekend 15-minute reference shape", "afternoon cooling uplift", "hard reconciliation constraint"],
+        "How it is used": [f"{bill.building_type} daily schedule re-times the metered profile", "weekday/weekend 15-minute reference shape", "cooling carried in the metered reference profile", "hard reconciliation constraint"],
     })
     right.subheader("Why this curve looks this way")
     right.dataframe(drivers, hide_index=True, width="stretch")

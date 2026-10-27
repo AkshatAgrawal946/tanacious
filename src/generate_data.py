@@ -14,19 +14,39 @@ BUILDINGS = {
 }
 INTERVAL_METERED = {"academic", "lab"}
 
+# Weekday occupancy (0-1) for each hour, by building type. Each type peaks at its own time:
+# academic during afternoon classes (2-4 PM), library and hostels in the evening, labs flat.
+OCCUPANCY = {
+    "academic": [.05, .05, .05, .05, .05, .05, .05, .1, .35, .6, .75, .8,
+                 .6, .8, .95, 1., .8, .45, .2, .1, .05, .05, .05, .05],
+    "library": [.1, .02, .02, .02, .02, .02, .02, .05, .2, .35, .4, .45,
+                .45, .5, .55, .6, .7, .85, .95, 1., .9, .7, .45, .25],
+    "hostel": [.65, .55, .5, .5, .5, .55, .7, .8, .55, .3, .2, .2,
+               .3, .3, .2, .25, .4, .6, .85, 1., 1., .95, .9, .8],
+    "lab": [.35, .35, .35, .35, .35, .35, .35, .45, .6, .8, .9, .95,
+            .85, .9, .95, 1., .95, .85, .7, .6, .5, .45, .4, .38],
+}
+# Weekend occupancy as a fraction of the weekday schedule.
+WEEKEND_FACTOR = {"academic": 0.15, "library": 0.7, "hostel": 1.0, "lab": 0.6}
+
 
 def _temperature(ts: pd.DatetimeIndex, rng: np.random.Generator) -> np.ndarray:
     hour = ts.hour + ts.minute / 60
     return 30 + 6 * np.sin(2 * np.pi * (hour - 9) / 24) + rng.normal(0, 1.5, len(ts))
 
 
-def _load(ts: pd.DatetimeIndex, temp: np.ndarray, base: float, peak: float, rng: np.random.Generator) -> np.ndarray:
+def _occupancy(ts: pd.DatetimeIndex, kind: str) -> np.ndarray:
     hour = ts.hour.to_numpy() + ts.minute.to_numpy() / 60
-    evening = peak * np.exp(-((hour - 18) ** 2) / 4)
-    daytime = 0.4 * peak * ((hour >= 9) & (hour < 18))
-    cooling = 1.5 * np.clip(temp - 26, 0, None)
-    weekend = np.where(ts.dayofweek >= 5, 0.8, 1.0)
-    return np.clip((base + evening + daytime + cooling) * weekend + rng.normal(0, 3, len(ts)), 0, None) / 4
+    schedule = OCCUPANCY[kind]
+    weekday = np.interp(hour, np.arange(25), schedule + schedule[:1])
+    return np.where(ts.day_of_week >= 5, WEEKEND_FACTOR[kind], 1.0) * weekday
+
+
+def _load(ts: pd.DatetimeIndex, temp: np.ndarray, kind: str, base: float, peak: float, rng: np.random.Generator) -> np.ndarray:
+    occupancy = _occupancy(ts, kind)
+    # Cooling is mostly switched on for occupied space, so an empty building barely cools.
+    cooling = 1.5 * np.clip(temp - 26, 0, None) * (0.3 + 0.7 * occupancy)
+    return np.clip(base + peak * occupancy + cooling + rng.normal(0, 3, len(ts)), 0, None) / 4
 
 
 def _dropouts(values: np.ndarray, rng: np.random.Generator) -> np.ndarray:
@@ -46,7 +66,7 @@ def generate(output_dir: str | Path = "data/raw", seed: int = SEED) -> tuple[pd.
     full = pd.concat([
         pd.DataFrame({
             "timestamp": ts, "building": name, "building_type": kind,
-            "temperature": temp.round(1), "kWh_consumed": _load(ts, temp, base, peak, rng).round(3),
+            "temperature": temp.round(1), "kWh_consumed": _load(ts, temp, kind, base, peak, rng).round(3),
         })
         for name, (kind, base, peak) in BUILDINGS.items()
     ], ignore_index=True)

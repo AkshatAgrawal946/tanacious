@@ -20,7 +20,7 @@ Run tests with `pytest -q`.
 ## What is implemented
 
 - CSV schema and data-quality validation
-- 15-minute profile baseline, including weekday, weekend, temperature and building-type effects
+- 15-minute profile baseline: same-type smart-meter profile when one exists, otherwise the metered profile re-timed by a building-type daily schedule (academic peaks 2-4 PM, library and hostels in the evening)
 - Monthly-bill reconciliation (`sum(interval kWh) == monthly_kWh`)
 - Observed versus reconstructed labels
 - A masked-meter evaluation harness with MAE, MAPE, peak-window error and bill-total error
