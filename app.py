@@ -6,49 +6,27 @@ import plotly.express as px  # type: ignore[import-not-found]
 import plotly.graph_objects as go  # type: ignore[import-not-found]
 import streamlit as st  # type: ignore[import-not-found]
 
-from src.data import load_data, validate_inputs
+from src.data import load_data
+from src.generate_data import generate
 from src.reconstruct import reconstruct_building_month
+
+DATA_DIR = Path("data/raw")
 
 st.set_page_config(page_title="The Missing Meter", page_icon="⚡", layout="wide")
 
 
 @st.cache_data
-def bundled_data() -> tuple[pd.DataFrame, pd.DataFrame]:
-    return load_data("data/raw")
-
-
-def read_upload(upload, kind: str) -> pd.DataFrame:
-    frame = pd.read_csv(upload)
-    if kind == "interval":
-        frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
-    return frame
+def campus_data() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Campus meter and bill data, generated on first launch if it is not on disk yet."""
+    if not (DATA_DIR / "interval_15min.csv").exists() or not (DATA_DIR / "monthly_totals.csv").exists():
+        generate(DATA_DIR)
+    return load_data(DATA_DIR)
 
 
 st.title("⚡ The Missing Meter")
 st.caption("Bill-constrained 15-minute demand reconstruction for campus facilities teams.")
 
-with st.sidebar:
-    st.header("Data source")
-    uploaded_interval = st.file_uploader("Interval meter CSV (optional)", type="csv")
-    uploaded_bills = st.file_uploader("Monthly bill CSV (optional)", type="csv")
-    st.caption("Upload both files, or use the bundled synthetic demo data.")
-
-if (uploaded_interval is None) != (uploaded_bills is None):
-    st.error("Upload both interval and monthly CSVs, or neither.")
-    st.stop()
-if uploaded_interval and uploaded_bills:
-    interval = read_upload(uploaded_interval, "interval")
-    bills = read_upload(uploaded_bills, "monthly")
-    bills["month"] = bills["month"].astype(str)
-    issues = validate_inputs(interval, bills)
-    if issues:
-        st.error("Input validation failed: " + "; ".join(issues))
-        st.stop()
-else:
-    if not Path("data/raw/interval_15min.csv").exists():
-        st.error("Demo data is missing. Run `python -m src.generate_data` first.")
-        st.stop()
-    interval, bills = bundled_data()
+interval, bills = campus_data()
 
 building = st.sidebar.selectbox("Building", sorted(bills["building"].unique()))
 months = sorted(bills.loc[bills["building"] == building, "month"].astype(str).unique())
@@ -95,10 +73,3 @@ with right:
     right.subheader("Why this curve looks this way")
     right.dataframe(drivers, hide_index=True, width="stretch")
     right.info("Reconstructed readings are estimates. They are not smart-meter observations and should be validated against a real sub-meter pilot.")
-
-st.download_button(
-    "Download reconstructed 15-minute CSV",
-    data=result.to_csv(index=False).encode("utf-8"),
-    file_name=f"{building}_{month}_reconstructed_15min.csv",
-    mime="text/csv",
-)

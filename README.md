@@ -24,7 +24,7 @@ Run tests with `pytest -q`.
 - Monthly-bill reconciliation (`sum(interval kWh) == monthly_kWh`)
 - Observed versus reconstructed labels
 - A masked-meter evaluation harness with MAE, MAPE, peak-window error and bill-total error
-- Streamlit dashboard with building selection, a peak-window chart, quality checks and CSV export
+- Streamlit dashboard that reads the campus data directly (generating it on first launch), with building selection, a peak-window chart and quality checks
 
 ## Input schema
 
