@@ -1,0 +1,30 @@
+[theme]
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap, sans-serif"
+headingFontWeights = [700, 650, 600, 600, 600, 600]
+headingFontSizes = ["2.25rem", "1.6rem", "1.3rem", "1.1rem", "1rem", "0.9rem"]
+metricValueFontSize = "1.85rem"
+metricValueFontWeight = 600
+baseRadius = "0.75rem"
+showSidebarBorder = true
+showWidgetBorder = true
+chartCategoricalColors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+
+[theme.light]
+primaryColor = "#4353d6"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f6f8"
+textColor = "#1d2230"
+borderColor = "#e4e6eb"
+
+[theme.light.sidebar]
+backgroundColor = "#f7f8fa"
+
+[theme.dark]
+primaryColor = "#8b97ff"
+backgroundColor = "#0f1117"
+secondaryBackgroundColor = "#1a1d26"
+textColor = "#e8eaf0"
+borderColor = "#2a2e3a"
+
+[theme.dark.sidebar]
+backgroundColor = "#14161e"

@@ -15,10 +15,10 @@ PROCESSED_DIR = Path("data/processed")
 # Validated categorical palette (colour-blind safe, fixed order). Each building and each month
 # keeps its slot, so changing the selection never repaints a series.
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
-NEUTRAL = "#52514e"
+PEAK = "#e34948"
 MAX_MONTHS = len(SERIES)
 
-st.set_page_config(page_title="The Missing Meter", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="The Missing Meter", page_icon=":material/bolt:", layout="wide")
 
 
 @st.cache_data
@@ -72,14 +72,21 @@ def axis_top(values) -> float:
     return float(pd.Series(values).max()) * 1.08
 
 
-def layout(fig: go.Figure, title: str, y_title: str, y_top: float, x_title: str = "Hour of day",
-           height: int = 420, peak_band: bool = True) -> go.Figure:
+def pretty(building: str) -> str:
+    return building.replace("_", " ")
+
+
+def layout(fig: go.Figure, y_title: str, y_top: float, x_title: str = "Hour of day",
+           height: int = 380, peak_band: bool = True, right_margin: int = 10) -> go.Figure:
     if peak_band:
-        fig.add_vrect(x0=16, x1=20, fillcolor="#e34948", opacity=0.07, line_width=0,
-                      annotation_text="4-8 PM", annotation_position="top left")
-    fig.update_layout(title=title, height=height, hovermode="x unified", margin={"t": 60, "b": 40},
-                      legend={"orientation": "h", "y": -0.18})
-    fig.update_yaxes(title=y_title, range=[0, y_top], rangemode="tozero")
+        fig.add_vrect(x0=16, x1=20, fillcolor=PEAK, opacity=0.08, line_width=0,
+                      annotation_text="4-8 PM peak", annotation_position="top left",
+                      annotation_font={"size": 11, "color": PEAK})
+    fig.update_layout(height=height, hovermode="x unified", margin={"t": 24, "b": 10, "l": 10, "r": right_margin},
+                      legend={"orientation": "h", "y": -0.2, "x": 0, "title": None},
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    fig.update_yaxes(title=y_title, range=[0, y_top], rangemode="tozero", zeroline=False)
+    fig.update_xaxes(showgrid=False, zeroline=False)
     if x_title == "Hour of day":
         fig.update_xaxes(title=x_title, range=[0, 24], tickvals=list(range(0, 25, 3)),
                          ticktext=[f"{h:02d}:00" for h in range(0, 25, 3)])
@@ -88,26 +95,33 @@ def layout(fig: go.Figure, title: str, y_title: str, y_top: float, x_title: str 
     return fig
 
 
-def monthly_bars(bills: pd.DataFrame, buildings: list[str], months: list[str], colors: dict[str, str],
-                 title: str) -> go.Figure:
+def chart_card(title: str, fig: go.Figure, caption: str | None = None) -> None:
+    """A chart in a bordered card with its heading and an optional note underneath."""
+    with st.container(border=True):
+        st.markdown(f"##### {title}")
+        st.plotly_chart(fig, width="stretch", config={"displaylogo": False})
+        if caption:
+            st.caption(caption)
+
+
+def monthly_bars(bills: pd.DataFrame, buildings: list[str], months: list[str], colors: dict[str, str]) -> go.Figure:
     """Whole-year monthly energy (from the bills), stacked by building; selected months stand out."""
     fig = go.Figure()
     all_months = sorted(bills["month"].unique())
     for building in buildings:
         energy = bills[bills["building"] == building].set_index("month")["monthly_kWh"].reindex(all_months) / 1000
         fig.add_trace(go.Bar(
-            x=[month_label(m) for m in all_months], y=energy, name=building,
-            marker={"color": colors[building], "opacity": [1.0 if m in months else 0.3 for m in all_months],
-                    "line": {"width": 1, "color": "white"}},
-            hovertemplate="%{x}: %{y:,.1f} MWh<extra>" + building + "</extra>"))
-    fig.update_layout(barmode="stack", title=title, height=380, margin={"t": 60, "b": 40},
-                      legend={"orientation": "h", "y": -0.2})
-    fig.update_yaxes(title="Energy (MWh)")
+            x=[month_label(m) for m in all_months], y=energy, name=pretty(building),
+            marker={"color": colors[building], "opacity": [1.0 if m in months else 0.28 for m in all_months],
+                    "line": {"width": 0}},
+            hovertemplate="%{x}: %{y:,.1f} MWh<extra>" + pretty(building) + "</extra>"))
+    fig.update_layout(barmode="stack", bargap=0.3, height=340, margin={"t": 10, "b": 10, "l": 10, "r": 10},
+                      legend={"orientation": "h", "y": -0.18, "x": 0},
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    fig.update_yaxes(title="Energy (MWh)", zeroline=False)
+    fig.update_xaxes(showgrid=False)
     return fig
 
-
-st.title("⚡ The Missing Meter")
-st.caption("Bill-constrained 15-minute demand reconstruction for campus facilities teams.")
 
 interval, bills = campus_data()
 bills = bills.assign(month=bills["month"].astype(str))
@@ -120,12 +134,25 @@ meter_status = {
 }
 
 with st.sidebar:
-    building = st.selectbox("Building", buildings)
+    st.markdown("### :material/bolt: The Missing Meter")
+    st.caption("15-minute demand, rebuilt from monthly bills.")
     months = st.multiselect("Months", all_months, default=all_months[:1], format_func=month_label,
-                            max_selections=MAX_MONTHS,
+                            max_selections=MAX_MONTHS, placeholder="Choose months",
                             help=f"Pick up to {MAX_MONTHS} months to compare them side by side.")
+    st.divider()
+    st.markdown("**Metering**")
+    for b in buildings:
+        smart = meter_status[b] == "Smart meter"
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.markdown(pretty(b), width="stretch")
+            st.badge(meter_status[b], color="green" if smart else "gray",
+                     icon=":material/sensors:" if smart else ":material/receipt_long:")
+
+st.title("The Missing Meter")
+st.caption("Bill-constrained 15-minute demand reconstruction for campus facilities teams.")
+
 if not months:
-    st.info("Pick at least one month in the sidebar.")
+    st.info("Pick at least one month in the sidebar to get started.", icon=":material/calendar_month:")
     st.stop()
 months = sorted(months)
 month_colors = {m: SERIES[i] for i, m in enumerate(months)}
@@ -134,17 +161,21 @@ period = ", ".join(month_label(m) for m in months)
 rec = reconstruction(interval, bills)
 selected = rec[rec["month"].isin(months)]
 
-campus_tab, building_tab = st.tabs(["Campus overview", "Building"])
+campus_tab, building_tab = st.tabs([":material/apartment: Campus overview", ":material/domain: Building"])
 
 with campus_tab:
     campus = selected.groupby("timestamp")["kW"].sum()
     energy = bills[bills["month"].isin(months)].groupby("building")["monthly_kWh"].sum()
     peak_window = selected["timestamp"].dt.hour.between(16, 19)
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Campus energy", f"{energy.sum() / 1000:,.1f} MWh", help="Sum of the monthly bills for the selected months.")
-    c2.metric("4-8 PM share", f"{selected.loc[peak_window, 'kWh_consumed'].sum() / selected['kWh_consumed'].sum():.1%}")
-    c3.metric("Campus peak", f"{campus.max():,.0f} kW", delta=campus.idxmax().strftime("%d %b, %H:%M"), delta_color="off")
-    c4.metric("Biggest user", energy.idxmax(), delta=f"{energy.max() / energy.sum():.0%} of campus energy", delta_color="off")
+    c1.metric("Campus energy", f"{energy.sum() / 1000:,.1f} MWh", border=True, height="stretch",
+              help="Sum of the monthly bills for the selected months.")
+    c2.metric("4-8 PM share", f"{selected.loc[peak_window, 'kWh_consumed'].sum() / selected['kWh_consumed'].sum():.1%}",
+              border=True, height="stretch")
+    c3.metric("Campus peak", f"{campus.max():,.0f} kW", delta=campus.idxmax().strftime("%d %b, %H:%M"),
+              delta_color="off", delta_arrow="off", border=True, height="stretch")
+    c4.metric("Biggest user", pretty(energy.idxmax()), delta=f"{energy.max() / energy.sum():.0%} of campus energy",
+              delta_color="off", delta_arrow="off", border=True, height="stretch")
 
     profile = average_day(selected, ["kW"], ["building"])
     # Fix the axis to the busiest single month of the year so switching months keeps the scale.
@@ -152,61 +183,82 @@ with campus_tab:
     fig = go.Figure()
     for b in buildings:
         rows = profile[profile["building"] == b]
-        fig.add_trace(go.Scatter(x=rows["hour"], y=rows["kW"], name=b, stackgroup="campus", mode="lines",
+        fig.add_trace(go.Scatter(x=rows["hour"], y=rows["kW"], name=pretty(b), stackgroup="campus", mode="lines",
                                  line={"width": 0.5, "color": building_colors[b]}, fillcolor=building_colors[b],
-                                 hovertemplate="%{y:,.0f} kW<extra>" + b + "</extra>"))
-    st.plotly_chart(layout(fig, f"Campus load on an average day - {period}",
-                           "Average power (kW)", axis_top(yearly)), width="stretch")
-    st.caption("Each band is one building; the top edge is the whole campus. "
+                                 hovertemplate="%{y:,.0f} kW<extra>" + pretty(b) + "</extra>"))
+    chart_card(f"Campus load on an average day · {period}",
+               layout(fig, "Average power (kW)", axis_top(yearly)),
+               "Each band is one building; the top edge is the whole campus. "
                "The y-axis is fixed to the busiest month of the year, so months can be compared by eye.")
 
-    st.plotly_chart(monthly_bars(bills, buildings, months, building_colors,
-                                 "Monthly energy by building (selected months highlighted)"), width="stretch")
+    chart_card("Monthly energy by building", monthly_bars(bills, buildings, months, building_colors),
+               "Selected months are shown in full colour.")
 
     day_profile = profile.set_index(["building", "hour"])["kW"]
     summary = pd.DataFrame({
         "Metering": pd.Series(meter_status),
-        "Energy (MWh)": (energy / 1000).round(1),
-        "Share of campus": (energy / energy.sum()).map("{:.0%}".format),
+        "Energy": energy / 1000,
+        "Share of campus": energy / energy.sum() * 100,
         "4-8 PM share": (selected[peak_window].groupby("building")["kWh_consumed"].sum()
-                         / selected.groupby("building")["kWh_consumed"].sum()).map("{:.0%}".format),
-        "Average-day peak (kW)": day_profile.groupby("building").max().round(0),
+                         / selected.groupby("building")["kWh_consumed"].sum() * 100),
+        "Average-day peak": day_profile.groupby("building").max(),
         "Peak time": day_profile.groupby("building").idxmax().map(lambda key: f"{int(key[1]):02d}:{int(key[1] % 1 * 60):02d}"),
-    }).rename_axis("Building")
-    st.dataframe(summary, width="stretch")
+    })
+    summary.index = summary.index.map(pretty)
+    with st.container(border=True):
+        st.markdown("##### Buildings at a glance")
+        st.dataframe(summary.rename_axis("Building").reset_index(), width="stretch", hide_index=True,
+                     column_config={
+                         "Energy": st.column_config.NumberColumn(format="%.1f MWh"),
+                         "Share of campus": st.column_config.ProgressColumn(format="%.0f%%", min_value=0, max_value=100),
+                         "4-8 PM share": st.column_config.NumberColumn(format="%.0f%%"),
+                         "Average-day peak": st.column_config.NumberColumn(format="%.0f kW"),
+                     })
 
 with building_tab:
+    building = st.segmented_control("Building", buildings, default=buildings[0], required=True,
+                                    format_func=pretty, label_visibility="collapsed")
     own = selected[selected["building"] == building]
     own_bills = bills[(bills["building"] == building) & bills["month"].isin(months)]
     peak_row = own.loc[own["kW"].idxmax()]
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Billed energy", f"{own_bills['monthly_kWh'].sum():,.0f} kWh")
-    c2.metric("4-8 PM share", f"{own.loc[own['timestamp'].dt.hour.between(16, 19), 'kWh_consumed'].sum() / own['kWh_consumed'].sum():.1%}")
-    c3.metric("Highest 15-min load", f"{peak_row.kW:,.0f} kW", delta=peak_row.timestamp.strftime("%d %b, %H:%M"), delta_color="off")
-    c4.metric("Real readings", f"{own['is_observed'].mean():.0%}", delta=meter_status[building], delta_color="off")
-    st.success(f"Accounting check passed: reconstructed total = {own['kWh_consumed'].sum():,.1f} kWh; "
-               f"billed = {own_bills['monthly_kWh'].sum():,.1f} kWh.")
-    accuracy = tested_accuracy()
-    if accuracy is not None and building in accuracy.index and own["is_reconstructed"].any():
-        row = accuracy.loc[building]
-        how = ("against the hidden true load" if row.evaluated_against == "hidden ground truth"
-               else "by rebuilding it with its own meter hidden")
-        st.caption(f"Tested accuracy for {building} over the year, {how}: {row.mape_pct:.1f}% average error per "
-                   f"15-minute interval, {row.peak_window_error_pct:.1f}% error on 4-8 PM energy.")
+    c1.metric("Billed energy", f"{own_bills['monthly_kWh'].sum():,.0f} kWh", border=True, height="stretch")
+    c2.metric("4-8 PM share", f"{own.loc[own['timestamp'].dt.hour.between(16, 19), 'kWh_consumed'].sum() / own['kWh_consumed'].sum():.1%}",
+              border=True, height="stretch")
+    c3.metric("Highest 15-min load", f"{peak_row.kW:,.0f} kW", delta=peak_row.timestamp.strftime("%d %b, %H:%M"),
+              delta_color="off", delta_arrow="off", border=True, height="stretch")
+    c4.metric("Real readings", f"{own['is_observed'].mean():.0%}", delta=meter_status[building],
+              delta_color="off", delta_arrow="off", border=True, height="stretch")
+
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.badge("Matches the bill", icon=":material/check_circle:", color="green",
+                 help=f"Reconstructed total = {own['kWh_consumed'].sum():,.1f} kWh; "
+                      f"billed = {own_bills['monthly_kWh'].sum():,.1f} kWh.")
+        accuracy = tested_accuracy()
+        if accuracy is not None and building in accuracy.index and own["is_reconstructed"].any():
+            row = accuracy.loc[building]
+            how = ("against the hidden true load" if row.evaluated_against == "hidden ground truth"
+                   else "by rebuilding it with its own meter hidden")
+            st.badge(f"{row.mape_pct:.1f}% avg. error per interval", icon=":material/target:", color="blue",
+                     help=f"Tested over the year {how}.")
+            st.badge(f"{row.peak_window_error_pct:.1f}% error on 4-8 PM energy", color="blue")
 
     own_year = rec[rec["building"] == building]
     by_month = average_day(own_year, ["kW"], ["month"])
+    direct_labels = len(months) <= 4  # direct labels while they stay readable; the legend covers the rest
     fig = go.Figure()
     for m in months:
         rows = by_month[by_month["month"] == m]
         fig.add_trace(go.Scatter(x=rows["hour"], y=rows["kW"], name=month_label(m), mode="lines",
-                                 line={"width": 2, "color": month_colors[m]},
+                                 line={"width": 2.5, "color": month_colors[m]},
                                  hovertemplate="%{y:,.1f} kW<extra>" + month_label(m) + "</extra>"))
-        if len(months) <= 4:  # direct labels while they stay readable; the legend covers the rest
+        if direct_labels:
             fig.add_annotation(x=rows["hour"].iloc[-1], y=rows["kW"].iloc[-1], text=pd.Period(m, "M").strftime("%b"),
-                               showarrow=False, xanchor="left", xshift=4, font={"color": NEUTRAL})
-    st.plotly_chart(layout(fig, f"{building}: average day by month",
-                           "Average power (kW)", axis_top(by_month["kW"])), width="stretch")
+                               showarrow=False, xanchor="left", xshift=6, font={"color": month_colors[m], "size": 12})
+    if direct_labels:
+        fig.update_layout(showlegend=False)
+    chart_card(f"{pretty(building)} · average day by month",
+               layout(fig, "Average power (kW)", axis_top(by_month["kW"]), right_margin=44 if direct_labels else 10))
 
     fig = go.Figure()
     for m in months:
@@ -215,10 +267,10 @@ with building_tab:
                                    line={"width": 1, "color": month_colors[m]},
                                    hovertemplate="%{x|%d %b %H:%M}: %{y:,.1f} kW<extra></extra>"))
     year_own = rec[rec["building"] == building]
-    st.plotly_chart(layout(fig, f"{building}: 15-minute load", "Power (kW)",
-                           axis_top(year_own["kW"]), x_title="Date", peak_band=False), width="stretch")
-    st.caption(f"{int(own['is_observed'].sum()):,} of {len(own):,} intervals are real meter readings; the rest are "
+    chart_card(f"{pretty(building)} · 15-minute load",
+               layout(fig, "Power (kW)", axis_top(year_own["kW"]), x_title="Date", peak_band=False),
+               f"{int(own['is_observed'].sum()):,} of {len(own):,} intervals are real meter readings; the rest are "
                "reconstructed and scaled so each month matches its bill.")
 
-    st.plotly_chart(monthly_bars(bills, [building], months, building_colors,
-                                 f"{building}: monthly energy (selected months highlighted)"), width="stretch")
+    chart_card(f"{pretty(building)} · monthly energy", monthly_bars(bills, [building], months, building_colors),
+               "Selected months are shown in full colour.")
