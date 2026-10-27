@@ -24,6 +24,10 @@ MODEL_PATH = Path("models/random_forest.joblib")
 SCHEDULE_FEATURES = [
     "Is_Weekend", "Temperature", "Temperature_3h_Mean", "Cooling_Degrees",
     "Scheduled_Occupancy", "Occupancy_Prev_1h", "Occupancy_Next_1h", "Occupied_Cooling",
+    # Whole-day descriptors of the building type. Without them, two types whose hourly schedules
+    # match at different times of day look identical (the library at 6 PM equals the lab at 2 PM),
+    # and the forest copies the lab's flatter peak onto the library, leaving a dip at its peak.
+    "Night_Occupancy", "Evening_Share",
 ]
 # With clock time the forest memorises when the *metered* buildings are busy (academic and lab,
 # both afternoon peaks) and copies that onto hostels and the library. Without it, load has to be
@@ -51,6 +55,7 @@ def build_features(timestamps: pd.DatetimeIndex, building_type: str, temperature
     temp_3h = pd.Series(temp).rolling(12, min_periods=1).mean().to_numpy()
     occupancy = _type_prior(building_type, hour)
     cooling = np.clip(temp_3h - 26.0, 0, None)
+    day = _type_prior(building_type, np.arange(24, dtype=float))
     return pd.DataFrame({
         "Hour_Sin": np.sin(2 * np.pi * hour / 24),
         "Hour_Cos": np.cos(2 * np.pi * hour / 24),
@@ -63,6 +68,9 @@ def build_features(timestamps: pd.DatetimeIndex, building_type: str, temperature
         "Occupancy_Prev_1h": _type_prior(building_type, (hour - 1) % 24),
         "Occupancy_Next_1h": _type_prior(building_type, (hour + 1) % 24),
         "Occupied_Cooling": occupancy * cooling,
+        # Always-on level (3 AM) and how evening-heavy the type is (5-11 PM share of the day).
+        "Night_Occupancy": day[3],
+        "Evening_Share": day[17:23].sum() / day.sum(),
     })
 
 

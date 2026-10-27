@@ -92,3 +92,13 @@ def test_unmetered_types_are_retimed_to_their_own_peak(tmp_path):
     for building in ("B1_Hostel_A", "B4_Library"):
         result = reconstruct_building_month(interval, bills, building, "2026-06")
         assert 17 <= _weekday_peak_hour(result) < 21
+
+
+def test_random_forest_has_no_dip_at_the_library_peak(tmp_path):
+    interval, bills, hidden = generate(tmp_path)
+    series, _ = compare_models(interval, bills, hidden)
+    library = series[(series.building == "B4_Library") & ~series.is_pilot & (series.timestamp.dt.day_of_week < 5)]
+    hour = library.timestamp.dt.hour + library.timestamp.dt.minute / 60
+    profile = library.groupby(hour)["Random forest"].mean()
+    # Library schedules at 6-7 PM match the lab's at 2-3 PM; the forest must not copy the lab's flatter peak.
+    assert profile.loc[17.5:19.0].min() >= 0.95 * profile.loc[17.5:19.0].max()
