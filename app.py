@@ -62,6 +62,11 @@ def hour_of_day(timestamps: pd.Series) -> pd.Series:
     return timestamps.dt.hour + timestamps.dt.minute / 60
 
 
+def clock(hours):
+    """Hour-of-day floats as times on a fixed date, so charts show 06:15 rather than 6.25."""
+    return pd.Timestamp("2000-01-01") + pd.to_timedelta(hours, unit="h")
+
+
 def average_day(frame: pd.DataFrame, columns: list[str], by: list[str] | None = None) -> pd.DataFrame:
     """Mean of ``columns`` per 15-minute slot of the day (and per ``by`` groups)."""
     keys = [*(by or []), hour_of_day(frame["timestamp"]).rename("hour")]
@@ -79,7 +84,7 @@ def pretty(building: str) -> str:
 def layout(fig: go.Figure, y_title: str, y_top: float, x_title: str = "Hour of day",
            height: int = 380, peak_band: bool = True, right_margin: int = 10) -> go.Figure:
     if peak_band:
-        fig.add_vrect(x0=16, x1=20, fillcolor=PEAK, opacity=0.08, line_width=0,
+        fig.add_vrect(x0=clock(16), x1=clock(20), fillcolor=PEAK, opacity=0.08, line_width=0,
                       annotation_text="4-8 PM peak", annotation_position="top left",
                       annotation_font={"size": 11, "color": PEAK})
     fig.update_layout(height=height, hovermode="x unified", margin={"t": 24, "b": 10, "l": 10, "r": right_margin},
@@ -88,7 +93,8 @@ def layout(fig: go.Figure, y_title: str, y_top: float, x_title: str = "Hour of d
     fig.update_yaxes(title=y_title, range=[0, y_top], rangemode="tozero", zeroline=False)
     fig.update_xaxes(showgrid=False, zeroline=False)
     if x_title == "Hour of day":
-        fig.update_xaxes(title=x_title, range=[0, 24], tickvals=list(range(0, 25, 3)),
+        fig.update_xaxes(title=x_title, range=[clock(0), clock(24)], hoverformat="%H:%M",
+                         tickvals=[clock(h) for h in range(0, 25, 3)],
                          ticktext=[f"{h:02d}:00" for h in range(0, 25, 3)])
     else:
         fig.update_xaxes(title=x_title)
@@ -183,7 +189,7 @@ with campus_tab:
     fig = go.Figure()
     for b in buildings:
         rows = profile[profile["building"] == b]
-        fig.add_trace(go.Scatter(x=rows["hour"], y=rows["kW"], name=pretty(b), stackgroup="campus", mode="lines",
+        fig.add_trace(go.Scatter(x=clock(rows["hour"]), y=rows["kW"], name=pretty(b), stackgroup="campus", mode="lines",
                                  line={"width": 0.5, "color": building_colors[b]}, fillcolor=building_colors[b],
                                  hovertemplate="%{y:,.0f} kW<extra>" + pretty(b) + "</extra>"))
     chart_card(f"Campus load on an average day · {period}",
@@ -249,11 +255,11 @@ with building_tab:
     fig = go.Figure()
     for m in months:
         rows = by_month[by_month["month"] == m]
-        fig.add_trace(go.Scatter(x=rows["hour"], y=rows["kW"], name=month_label(m), mode="lines",
+        fig.add_trace(go.Scatter(x=clock(rows["hour"]), y=rows["kW"], name=month_label(m), mode="lines",
                                  line={"width": 2.5, "color": month_colors[m]},
                                  hovertemplate="%{y:,.1f} kW<extra>" + month_label(m) + "</extra>"))
         if direct_labels:
-            fig.add_annotation(x=rows["hour"].iloc[-1], y=rows["kW"].iloc[-1], text=pd.Period(m, "M").strftime("%b"),
+            fig.add_annotation(x=clock(rows["hour"].iloc[-1]), y=rows["kW"].iloc[-1], text=pd.Period(m, "M").strftime("%b"),
                                showarrow=False, xanchor="left", xshift=6, font={"color": month_colors[m], "size": 12})
     if direct_labels:
         fig.update_layout(showlegend=False)
