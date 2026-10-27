@@ -8,10 +8,12 @@ A hackathon-ready campus energy prototype that reconstructs 15-minute electricit
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m src.generate_data
-python -m src.pipeline
+python -m src.generate_data   # synthetic campus data
+python -m src.pipeline        # reconstruct, train + save the Random Forest, compare both models
 .\run_app.ps1
 ```
+
+`python -m src.ml_model` trains and saves only the Random Forest (`models/random_forest.joblib`, not committed).
 
 Run tests with `pytest -q`.
 
@@ -24,7 +26,9 @@ Run tests with `pytest -q`.
 - Monthly-bill reconciliation (`sum(interval kWh) == monthly_kWh`)
 - Observed versus reconstructed labels
 - A masked-meter evaluation harness with MAE, MAPE, peak-window error and bill-total error
-- Streamlit dashboard that reads the campus data directly (generating it on first launch), with building selection, a peak-window chart and quality checks
+- Random Forest alternative (`src/ml_model.py`): learns how load follows each building type's schedule and the temperature from the metered buildings, then predicts the shape for bill-only buildings. Clock time is deliberately not an input: the metered buildings (academic, lab) both peak in the afternoon, and with clock time the forest copies that peak onto hostels and the library
+- Model comparison (`src/compare.py`): both models through the same bill reconciliation, scored against hidden truth for bill-only buildings and by holding out each metered building
+- Streamlit dashboard that reads the campus data directly (generating it on first launch), with building selection, a model switch, a peak-window chart, quality checks and a "Compare models" tab
 
 ## Input schema
 

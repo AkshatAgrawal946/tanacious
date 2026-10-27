@@ -1,0 +1,11 @@
+building,building_type,evaluated_against,model,mae_kwh,mape_pct,peak_window_error_pct,true_peak_hour,predicted_peak_hour
+B1_Hostel_A,hostel,hidden ground truth,Baseline,1.808554698746404,9.741623527374573,4.150799777275503,19,19
+B1_Hostel_A,hostel,hidden ground truth,Random forest,2.562853445553802,13.686639416484962,0.06728765541863468,19,19
+B2_Hostel_B,hostel,hidden ground truth,Baseline,1.628973687396126,9.784708552287487,3.063614757178637,19,19
+B2_Hostel_B,hostel,hidden ground truth,Random forest,2.3146318480595083,13.751485976636049,0.9770588841385635,19,19
+B3_Academic,academic,held-out meter,Baseline,1.036590630298163,10.808400455616171,6.184936062126661,14,14
+B3_Academic,academic,held-out meter,Random forest,1.5900615429756952,15.702166661631741,2.4938278974788397,14,14
+B4_Library,library,hidden ground truth,Baseline,0.9934685136040025,10.386075131016831,3.7655038474551445,18,18
+B4_Library,library,hidden ground truth,Random forest,1.3159820438657266,15.139636528793558,12.104247388581387,18,17
+B5_Lab,lab,held-out meter,Baseline,1.3444816892696227,8.134698973387218,6.046411428593335,15,15
+B5_Lab,lab,held-out meter,Random forest,2.043046667916952,12.2450377660658,4.95272495401565,15,14

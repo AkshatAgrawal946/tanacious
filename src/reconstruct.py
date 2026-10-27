@@ -1,4 +1,6 @@
 """Interpretable baseline reconstruction with a hard billing constraint."""
+from typing import Callable
+
 import numpy as np
 import pandas as pd
 
@@ -61,7 +63,14 @@ def reconcile_monthly(shape: np.ndarray, monthly_kwh: float) -> np.ndarray:
     return reconciled
 
 
-def reconstruct_building_month(interval: pd.DataFrame, bills: pd.DataFrame, building: str, month: str) -> pd.DataFrame:
+ShapeFn = Callable[[pd.DatetimeIndex, str], np.ndarray]
+
+
+def reconstruct_building_month(interval: pd.DataFrame, bills: pd.DataFrame, building: str, month: str,
+                               shape_fn: ShapeFn | None = None) -> pd.DataFrame:
+    """Reconstruct one building-month. ``shape_fn(timestamps, building_type)`` gives the
+    relative load shape; by default the reference-profile baseline. The bill and any real
+    readings are applied the same way whichever model supplies the shape."""
     bill = bills[(bills["building"] == building) & (bills["month"].astype(str) == str(month))]
     if len(bill) != 1:
         raise ValueError(f"expected one bill for {building} in {month}")
@@ -69,7 +78,10 @@ def reconstruct_building_month(interval: pd.DataFrame, bills: pd.DataFrame, buil
     monthly_kwh = float(bill.iloc[0]["monthly_kWh"])
     period = pd.Period(str(month), freq="M")
     timestamps = pd.date_range(period.start_time, period.end_time, freq="15min")
-    shape = _reference_shape(interval, timestamps, building_type)
+    if shape_fn is None:
+        shape = _reference_shape(interval, timestamps, building_type)
+    else:
+        shape = np.clip(np.asarray(shape_fn(timestamps, building_type), dtype=float), 1e-6, None)
     result = pd.DataFrame({
         "timestamp": timestamps, "building": building, "building_type": building_type,
         "month": str(month), "kWh_consumed": reconcile_monthly(shape, monthly_kwh),
@@ -107,6 +119,6 @@ def reconstruct_building_month(interval: pd.DataFrame, bills: pd.DataFrame, buil
     return result
 
 
-def reconstruct_all(interval: pd.DataFrame, bills: pd.DataFrame) -> pd.DataFrame:
-    frames = [reconstruct_building_month(interval, bills, row.building, str(row.month)) for row in bills.itertuples()]
+def reconstruct_all(interval: pd.DataFrame, bills: pd.DataFrame, shape_fn: ShapeFn | None = None) -> pd.DataFrame:
+    frames = [reconstruct_building_month(interval, bills, row.building, str(row.month), shape_fn) for row in bills.itertuples()]
     return pd.concat(frames, ignore_index=True)

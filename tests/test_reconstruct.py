@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+from src import ml_model
+from src.compare import compare_models
 from src.generate_data import generate
 from src.reconstruct import reconcile_monthly, reconstruct_building_month
 
@@ -49,6 +51,26 @@ def test_each_building_type_peaks_at_its_own_time(tmp_path):
     assert 18 <= peaks["B1_Hostel_A"] < 21 and 18 <= peaks["B2_Hostel_B"] < 21
     campus = full.groupby("timestamp", as_index=False)["kWh_consumed"].sum()
     assert 16 <= _weekday_peak_hour(campus) < 20  # campus spike stays in the 4-8 PM window
+
+
+def test_random_forest_reconstruction_matches_bill(tmp_path):
+    interval, bills, _ = generate(tmp_path)
+    shape = ml_model.shape_fn(ml_model.train(interval, bills), interval)
+    for building in ("B1_Hostel_A", "B3_Academic"):
+        result = reconstruct_building_month(interval, bills, building, "2026-06", shape)
+        bill = bills[(bills.building == building) & (bills.month == "2026-06")].iloc[0]
+        assert np.isclose(result.kWh_consumed.sum(), bill.monthly_kWh)
+        assert (result.kWh_consumed >= 0).all()
+
+
+def test_model_comparison_scores_every_building_with_both_models(tmp_path):
+    interval, bills, hidden = generate(tmp_path)
+    series, metrics = compare_models(interval, bills, hidden)
+    assert set(metrics.building) == set(bills.building)
+    assert set(metrics.model) == {"Baseline", "Random forest"}
+    assert series[["Baseline", "Random forest"]].notna().all().all()
+    forest = metrics[metrics.model == "Random forest"].set_index("building")
+    assert 17 <= forest.loc["B1_Hostel_A", "predicted_peak_hour"] < 21
 
 
 def test_unmetered_types_are_retimed_to_their_own_peak(tmp_path):

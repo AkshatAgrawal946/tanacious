@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src import ml_model
+from src.compare import compare_models
 from src.data import load_data
 from src.metrics import score_prediction
 from src.reconstruct import reconstruct_all, reconstruct_building_month
@@ -34,6 +36,16 @@ def main() -> None:
     pd.DataFrame([metrics]).to_csv(output / "masked_meter_metrics.csv", index=False)
     print("Wrote data/processed/reconstructed_15min.csv")
     print(pd.Series(metrics).round(3).to_string())
+
+    model_path = ml_model.save(ml_model.train(interval, bills))
+    print(f"Trained the Random Forest and saved it to {model_path}")
+    # Ground truth is opened only here, to score both models after they have predicted.
+    hidden = pd.read_csv(Path("data/raw") / "ground_truth_15min.csv", parse_dates=["timestamp"])
+    series, comparison = compare_models(interval, bills, hidden)
+    series.to_csv(output / "model_comparison_15min.csv", index=False)
+    comparison.to_csv(output / "model_comparison_metrics.csv", index=False)
+    print("Wrote data/processed/model_comparison_15min.csv and model_comparison_metrics.csv")
+    print(comparison.pivot_table(index="building", columns="model", values="mape_pct").round(1).to_string())
 
 
 if __name__ == "__main__":
