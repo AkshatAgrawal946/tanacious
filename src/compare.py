@@ -64,7 +64,12 @@ def compare_models(interval: pd.DataFrame, bills: pd.DataFrame, hidden: pd.DataF
         frames.append(frame.assign(building=building, building_type=building_type, evaluated_against=evaluated_against))
     series = pd.concat(frames, ignore_index=True)[
         ["timestamp", "building", "building_type", "evaluated_against", "is_pilot", "actual", *MODELS]]
+    return series, score_series(series)
 
+
+def score_series(series: pd.DataFrame) -> pd.DataFrame:
+    """Per-building, per-model scores for any slice of ``compare_models`` output (e.g. some months).
+    Pilot-meter intervals are left out: both models keep those real readings as-is."""
     rows = []
     for (building, building_type, evaluated_against), group in series[~series["is_pilot"]].groupby(
             ["building", "building_type", "evaluated_against"]):
@@ -80,4 +85,4 @@ def compare_models(interval: pd.DataFrame, bills: pd.DataFrame, hidden: pd.DataF
                 "true_peak_hour": _weekday_peak_hour(actual),
                 "predicted_peak_hour": _weekday_peak_hour(group.set_index("timestamp")[model]),
             })
-    return series, pd.DataFrame(rows)
+    return pd.DataFrame(rows)

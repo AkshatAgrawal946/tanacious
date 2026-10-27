@@ -28,7 +28,7 @@ Run tests with `pytest -q`.
 - A masked-meter evaluation harness with MAE, MAPE, peak-window error and bill-total error
 - Random Forest alternative (`src/ml_model.py`): learns how load follows each building type's schedule and the temperature from the metered buildings, then predicts the shape for bill-only buildings. Clock time is deliberately not an input: the metered buildings (academic, lab) both peak in the afternoon, and with clock time the forest copies that peak onto hostels and the library
 - Model comparison (`src/compare.py`): both models through the same bill reconciliation, scored against hidden truth for bill-only buildings and by holding out each metered building
-- Streamlit dashboard that reads the campus data directly (generating it on first launch), with building selection, a model switch, a peak-window chart, quality checks and a "Compare models" tab
+- Streamlit dashboard that reads the campus data directly (generating it on first launch). Pick a building, up to 8 months, weekdays/weekends/all days and a model; charts show average power in kW with y-axes fixed to the busiest month of the year, so selections can be compared by eye. Tabs: "Campus overview" (all buildings stacked, monthly energy by building, summary table), "Building" (one line per selected month, 15-minute load, monthly energy) and "Compare models" (scores and charts for the selected months)
 
 ## Input schema
 
