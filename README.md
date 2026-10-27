@@ -38,9 +38,9 @@ Run tests with `pytest -q`.
 
 The bundled generator creates `data/raw/` files for all of 2026 (12 monthly bills per building), with seasonal temperature (hottest late May, coolest in winter). `ground_truth_15min.csv` is demo-only and must never be used by the reconstruction pipeline.
 
-Academic calendar (`BREAKS` in `src/campus_calendar.py`, currently summer vacation 16 May - 19 July and winter break 19 Dec - 3 Jan; edit to match the college): occupancy drops during breaks, and both models are told which days are breaks.
+Academic calendar (`BREAKS` in `src/campus_calendar.py`, currently summer vacation 16 May - 19 July and winter break 19 Dec - 3 Jan; edit to match the college): occupancy drops during breaks, and so does the always-on load (`BREAK_STANDBY`: closed blocks switch most lighting, servers and AC off; labs keep running). Both models are told which days are breaks.
 
-Pilot meters (`PILOT_METERS` in `src/generate_data.py`): Hostel A and the Library get a temporary clamp-on meter for 3-16 August (term time), so `interval_15min.csv` holds two weeks of their 15-minute readings. Both models use these weeks (they are the only data showing what an evening-peaking building looks like); the comparison scores both models only outside them.
+Pilot meters (`PILOT_METERS` in `src/generate_data.py`): Hostel A and the Library get a temporary clamp-on meter for two fortnights, 8-21 June (summer vacation) and 3-16 August (term time), so `interval_15min.csv` holds four weeks of their 15-minute readings. Both models use these weeks (they are the only data showing what an evening-peaking building looks like, busy and near-empty); the comparison scores both models only outside them.
 
 ## Demo claim
 

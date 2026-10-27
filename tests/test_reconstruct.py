@@ -57,14 +57,17 @@ def test_each_building_type_peaks_at_its_own_time(tmp_path):
 
 def test_pilot_meters_release_only_their_window_and_are_not_scored(tmp_path):
     interval, bills, hidden = generate(tmp_path)
-    for building, (start, end) in PILOT_METERS.items():
+    for building, windows in PILOT_METERS.items():
         pilot = interval[interval.building == building]
-        assert len(pilot) == 14 * 96
-        assert pilot.timestamp.min() == pd.Timestamp(start)
-        assert pilot.timestamp.max() == pd.Timestamp(end) + pd.Timedelta(hours=23, minutes=45)
+        assert len(pilot) == len(windows) * 14 * 96
+        for start, end in windows:
+            window = pilot[(pilot.timestamp >= start) & (pilot.timestamp < pd.Timestamp(end) + pd.Timedelta(days=1))]
+            assert len(window) == 14 * 96
+    # One pilot fortnight falls in a break, so the models see a near-empty building too.
+    assert is_break(interval[interval.building == "B1_Hostel_A"].timestamp).any()
     series, metrics = compare_models(interval, bills, hidden)
     hostel = series[series.building == "B1_Hostel_A"]
-    assert hostel.is_pilot.sum() == 14 * 96
+    assert hostel.is_pilot.sum() == 2 * 14 * 96
     assert metrics.loc[metrics.building == "B1_Hostel_A", "evaluated_against"].eq("hidden ground truth").all()
 
 
@@ -114,3 +117,14 @@ def test_generator_covers_a_year_with_quieter_breaks(tmp_path):
     term_load = academic.loc[weekday_daytime & ~on_break, "kWh_consumed"].mean()
     break_load = academic.loc[weekday_daytime & on_break, "kWh_consumed"].mean()
     assert break_load < 0.8 * term_load
+
+
+def test_buildings_are_much_quieter_during_breaks(tmp_path):
+    interval, _, hidden = generate(tmp_path)
+    full = pd.concat([interval[~interval.building.isin(hidden.building)], hidden]).dropna(subset=["kWh_consumed"])
+    full = full[full.timestamp.dt.month.isin([5, 6, 7, 8])]  # same season for break and term
+    on_break = is_break(full.timestamp)
+    ratio = full[on_break].groupby("building").kWh_consumed.mean() / full[~on_break].groupby("building").kWh_consumed.mean()
+    assert ratio["B3_Academic"] < 0.45 and ratio["B4_Library"] < 0.5
+    assert ratio["B1_Hostel_A"] < 0.5 and ratio["B2_Hostel_B"] < 0.5
+    assert ratio["B5_Lab"] > 0.7  # research keeps running

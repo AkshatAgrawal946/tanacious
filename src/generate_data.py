@@ -17,9 +17,10 @@ BUILDINGS = {
 }
 INTERVAL_METERED = {"academic", "lab"}
 # A temporary clamp-on meter on bill-only buildings: their 15-minute readings are released for
-# this window only (inclusive); the rest of the year stays bill-only. Placed in term time so the
-# readings show normal use rather than the summer vacation.
-PILOT_METERS = {"B1_Hostel_A": ("2026-08-03", "2026-08-16"), "B4_Library": ("2026-08-03", "2026-08-16")}
+# these windows only (inclusive); the rest of the year stays bill-only. One fortnight falls in the
+# summer vacation and one in term time, so the readings show both a near-empty and a busy building.
+PILOT_WINDOWS = [("2026-06-08", "2026-06-21"), ("2026-08-03", "2026-08-16")]
+PILOT_METERS = {"B1_Hostel_A": PILOT_WINDOWS, "B4_Library": PILOT_WINDOWS}
 
 # Weekday occupancy (0-1) for each hour, by building type. Each type peaks at its own time:
 # academic during afternoon classes (2-4 PM), library and hostels in the evening, labs flat.
@@ -38,6 +39,9 @@ WEEKEND_FACTOR = {"academic": 0.15, "library": 0.7, "hostel": 1.0, "lab": 0.6}
 # Occupancy during academic breaks as a fraction of term time: classes stop, most students go
 # home, research labs keep running.
 BREAK_FACTOR = {"academic": 0.1, "library": 0.25, "hostel": 0.3, "lab": 0.7}
+# Always-on load (lighting, servers, pumps, standby AC) during breaks as a fraction of term time:
+# closed blocks switch most of it off, labs keep freezers, servers and long experiments running.
+BREAK_STANDBY = {"academic": 0.35, "library": 0.45, "hostel": 0.4, "lab": 0.85}
 
 
 def _temperature(ts: pd.DatetimeIndex, rng: np.random.Generator) -> np.ndarray:
@@ -60,9 +64,10 @@ def _occupancy(ts: pd.DatetimeIndex, kind: str) -> np.ndarray:
 
 def _load(ts: pd.DatetimeIndex, temp: np.ndarray, kind: str, base: float, peak: float, rng: np.random.Generator) -> np.ndarray:
     occupancy = _occupancy(ts, kind)
+    standby = np.where(is_break(ts), BREAK_STANDBY[kind], 1.0)
     # Cooling is mostly switched on for occupied space, so an empty building barely cools.
-    cooling = 1.5 * np.clip(temp - 26, 0, None) * (0.3 + 0.7 * occupancy)
-    return np.clip(base + peak * occupancy + cooling + rng.normal(0, 3, len(ts)), 0, None) / 4
+    cooling = 1.5 * np.clip(temp - 26, 0, None) * (0.3 * standby + 0.7 * occupancy)
+    return np.clip(base * standby + peak * occupancy + cooling + rng.normal(0, 3, len(ts)), 0, None) / 4
 
 
 def _dropouts(values: np.ndarray, rng: np.random.Generator) -> np.ndarray:
@@ -94,7 +99,7 @@ def generate(output_dir: str | Path = "data/raw", seed: int = SEED) -> tuple[pd.
     hidden = full[~full["building_type"].isin(INTERVAL_METERED)].copy()
     pilots = [hidden[(hidden["building"] == building) & (hidden["timestamp"] >= start)
                      & (hidden["timestamp"] < pd.Timestamp(end) + pd.Timedelta(days=1))]
-              for building, (start, end) in PILOT_METERS.items()]
+              for building, windows in PILOT_METERS.items() for start, end in windows]
     interval = pd.concat([interval, *pilots], ignore_index=True)
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)

@@ -5,8 +5,9 @@ weather and the calendar, from the smart-metered buildings only. For a bill-only
 predicts that shape from the building's own schedule; the bill then fixes the absolute level
 through the same reconciliation the baseline uses (``reconstruct_building_month``).
 
-Target: each reading divided by the building-month's average interval energy (bill / number of
-intervals), so buildings of different size share one scale.
+Target: each reading divided by the building's average interval energy over all its bills
+(total billed kWh / number of intervals), so buildings of different size share one scale while
+seasonal and vacation drops stay visible.
 
 Train and save with ``python -m src.ml_model``.
 """
@@ -81,16 +82,16 @@ def _training_rows(interval: pd.DataFrame, bills: pd.DataFrame) -> tuple[pd.Data
     observed = interval.dropna(subset=["kWh_consumed"])
     if observed.empty:
         raise ValueError("no observed 15-minute data to train on")
-    bill_lookup = bills.assign(month=bills["month"].astype(str)).set_index(["building", "month"])["monthly_kWh"]
     frames, targets = [], []
     for building, rows in observed.groupby("building"):
         rows = rows.sort_values("timestamp")
-        months = rows["timestamp"].dt.to_period("M")
-        # Average interval energy for the building-month, from the bill.
-        intervals_in_month = months.map(lambda m: m.days_in_month * 96).to_numpy()
-        monthly = np.asarray([bill_lookup.loc[(building, str(m))] for m in months], dtype=float)
+        # Average interval energy over all of the building's bills. A per-month average would hide
+        # the drop in an all-vacation month (June looks "normal for June") and the forest would
+        # never learn that breaks are quiet, which matters in part-term, part-break months.
+        own_bills = bills[bills["building"] == building]
+        intervals = sum(pd.Period(str(m), freq="M").days_in_month * 96 for m in own_bills["month"])
         frames.append(build_features(pd.DatetimeIndex(rows["timestamp"]), rows["building_type"].iloc[0], temperature))
-        targets.append(rows["kWh_consumed"].to_numpy() / (monthly / intervals_in_month))
+        targets.append(rows["kWh_consumed"].to_numpy() / (own_bills["monthly_kWh"].sum() / intervals))
     return pd.concat(frames, ignore_index=True), np.concatenate(targets)
 
 
