@@ -16,12 +16,6 @@ PROCESSED_DIR = Path("data/processed")
 # keeps its slot, so changing the selection never repaints a series.
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 NEUTRAL = "#52514e"
-DAY_TYPES = {
-    "Weekdays": lambda ts: ts.dt.day_of_week < 5,
-    "Weekends": lambda ts: ts.dt.day_of_week >= 5,
-    "All days": lambda ts: pd.Series(True, index=ts.index),
-}
-DAY_LABELS = {"Weekdays": "weekday", "Weekends": "weekend day", "All days": "day"}
 MAX_MONTHS = len(SERIES)
 
 st.set_page_config(page_title="The Missing Meter", page_icon="⚡", layout="wide")
@@ -121,8 +115,7 @@ buildings = sorted(bills["building"].unique())
 building_colors = {b: SERIES[i % len(SERIES)] for i, b in enumerate(buildings)}
 all_months = sorted(bills["month"].unique())
 meter_status = {
-    b: ("Smart meter" if interval.loc[interval["building"] == b, "kWh_consumed"].count() > 0.5 * 96 * 365
-        else "Bill + pilot meter" if b in set(interval["building"]) else "Bill only")
+    b: "Smart meter" if interval.loc[interval["building"] == b, "kWh_consumed"].count() > 0.5 * 96 * 365 else "Bill only"
     for b in buildings
 }
 
@@ -131,7 +124,6 @@ with st.sidebar:
     months = st.multiselect("Months", all_months, default=all_months[:1], format_func=month_label,
                             max_selections=MAX_MONTHS,
                             help=f"Pick up to {MAX_MONTHS} months to compare them side by side.")
-    day_type = st.radio("Average over", list(DAY_TYPES), horizontal=True)
 if not months:
     st.info("Pick at least one month in the sidebar.")
     st.stop()
@@ -140,9 +132,7 @@ month_colors = {m: SERIES[i] for i, m in enumerate(months)}
 period = ", ".join(month_label(m) for m in months)
 
 rec = reconstruction(interval, bills)
-rec_days = rec[DAY_TYPES[day_type](rec["timestamp"])]
 selected = rec[rec["month"].isin(months)]
-selected_days = rec_days[rec_days["month"].isin(months)]
 
 campus_tab, building_tab = st.tabs(["Campus overview", "Building"])
 
@@ -156,16 +146,16 @@ with campus_tab:
     c3.metric("Campus peak", f"{campus.max():,.0f} kW", delta=campus.idxmax().strftime("%d %b, %H:%M"), delta_color="off")
     c4.metric("Biggest user", energy.idxmax(), delta=f"{energy.max() / energy.sum():.0%} of campus energy", delta_color="off")
 
-    profile = average_day(selected_days, ["kW"], ["building"])
+    profile = average_day(selected, ["kW"], ["building"])
     # Fix the axis to the busiest single month of the year so switching months keeps the scale.
-    yearly = average_day(rec_days, ["kW"], ["month", "building"]).groupby(["month", "hour"])["kW"].sum()
+    yearly = average_day(rec, ["kW"], ["month", "building"]).groupby(["month", "hour"])["kW"].sum()
     fig = go.Figure()
     for b in buildings:
         rows = profile[profile["building"] == b]
         fig.add_trace(go.Scatter(x=rows["hour"], y=rows["kW"], name=b, stackgroup="campus", mode="lines",
                                  line={"width": 0.5, "color": building_colors[b]}, fillcolor=building_colors[b],
                                  hovertemplate="%{y:,.0f} kW<extra>" + b + "</extra>"))
-    st.plotly_chart(layout(fig, f"Campus load on an average {DAY_LABELS[day_type]} - {period}",
+    st.plotly_chart(layout(fig, f"Campus load on an average day - {period}",
                            "Average power (kW)", axis_top(yearly)), width="stretch")
     st.caption("Each band is one building; the top edge is the whole campus. "
                "The y-axis is fixed to the busiest month of the year, so months can be compared by eye.")
@@ -204,7 +194,7 @@ with building_tab:
         st.caption(f"Tested accuracy for {building} over the year, {how}: {row.mape_pct:.1f}% average error per "
                    f"15-minute interval, {row.peak_window_error_pct:.1f}% error on 4-8 PM energy.")
 
-    own_year = rec_days[rec_days["building"] == building]
+    own_year = rec[rec["building"] == building]
     by_month = average_day(own_year, ["kW"], ["month"])
     fig = go.Figure()
     for m in months:
@@ -215,7 +205,7 @@ with building_tab:
         if len(months) <= 4:  # direct labels while they stay readable; the legend covers the rest
             fig.add_annotation(x=rows["hour"].iloc[-1], y=rows["kW"].iloc[-1], text=pd.Period(m, "M").strftime("%b"),
                                showarrow=False, xanchor="left", xshift=4, font={"color": NEUTRAL})
-    st.plotly_chart(layout(fig, f"{building}: average {DAY_LABELS[day_type]} by month",
+    st.plotly_chart(layout(fig, f"{building}: average day by month",
                            "Average power (kW)", axis_top(by_month["kW"])), width="stretch")
 
     fig = go.Figure()
@@ -232,12 +222,3 @@ with building_tab:
 
     st.plotly_chart(monthly_bars(bills, [building], months, building_colors,
                                  f"{building}: monthly energy (selected months highlighted)"), width="stretch")
-    with st.expander("Why this curve looks this way"):
-        building_type = bills.loc[bills["building"] == building, "building_type"].iloc[0]
-        how = [f"{building_type} daily schedule is a Random Forest input",
-               "weekend flag, and break days scaled by this building's own vacation-to-term bill ratio",
-               "temperature, 3-hour mean and cooling x expected occupancy",
-               "hard reconciliation constraint: real readings kept, the rest scaled to the bill"]
-        st.dataframe(pd.DataFrame({"Driver": ["Building type", "Calendar", "Temperature", "Monthly bill"], "How it is used": how}),
-                     hide_index=True, width="stretch")
-        st.info("Reconstructed readings are estimates, not smart-meter observations.")

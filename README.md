@@ -27,7 +27,7 @@ Run tests with `pytest -q`.
 - Monthly-bill reconciliation (`sum(interval kWh) == monthly_kWh`); real meter readings are kept and only the gaps are estimated
 - Observed versus reconstructed labels
 - Accuracy check (`src/evaluate.py`): bill-only buildings are scored against the hidden truth (pilot weeks excluded) and each metered building is rebuilt with its own meter hidden. Results go to `data/processed/evaluation_metrics.csv`
-- Streamlit dashboard that reads the campus data directly (generating it on first launch). Pick a building, up to 8 months and weekdays/weekends/all days; charts show average power in kW with y-axes fixed to the busiest month of the year, so selections can be compared by eye. Tabs: "Campus overview" (all buildings stacked, monthly energy by building, summary table) and "Building" (one line per selected month, 15-minute load, monthly energy, tested accuracy)
+- Streamlit dashboard that reads the campus data directly (generating it on first launch). Pick a building and up to 8 months; charts average over all days and show average power in kW with y-axes fixed to the busiest month of the year, so selections can be compared by eye. Tabs: "Campus overview" (all buildings stacked, monthly energy by building, summary table) and "Building" (one line per selected month, 15-minute load, monthly energy, tested accuracy)
 
 ## Input schema
 
