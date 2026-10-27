@@ -17,12 +17,13 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
+from src.campus_calendar import is_break
 from src.reconstruct import ShapeFn, _type_prior
 
 SEED = 2026
 MODEL_PATH = Path("models/random_forest.joblib")
 SCHEDULE_FEATURES = [
-    "Is_Weekend", "Temperature", "Temperature_3h_Mean", "Cooling_Degrees",
+    "Is_Weekend", "Is_Break", "Temperature", "Temperature_3h_Mean", "Cooling_Degrees",
     "Scheduled_Occupancy", "Occupancy_Prev_1h", "Occupancy_Next_1h", "Occupied_Cooling",
     # Whole-day descriptors of the building type. Without them, two types whose hourly schedules
     # match at different times of day look identical (the library at 6 PM equals the lab at 2 PM),
@@ -60,6 +61,7 @@ def build_features(timestamps: pd.DatetimeIndex, building_type: str, temperature
         "Hour_Sin": np.sin(2 * np.pi * hour / 24),
         "Hour_Cos": np.cos(2 * np.pi * hour / 24),
         "Is_Weekend": (timestamps.day_of_week >= 5).astype(int),
+        "Is_Break": is_break(timestamps).astype(int),  # academic calendar, known in advance
         "Temperature": temp,
         "Temperature_3h_Mean": temp_3h,
         "Cooling_Degrees": cooling,
@@ -96,7 +98,7 @@ def train(interval: pd.DataFrame, bills: pd.DataFrame, feature_set: str = DEFAUL
           seed: int = SEED) -> RandomForestRegressor:
     """Fit on every real smart-meter reading in ``interval``."""
     features, target = _training_rows(interval, bills)
-    model = RandomForestRegressor(n_estimators=200, min_samples_leaf=5, max_features=0.6,
+    model = RandomForestRegressor(n_estimators=100, min_samples_leaf=20, max_features=0.6,
                                   n_jobs=-1, random_state=seed)
     model.fit(features[FEATURE_SETS[feature_set]], target)
     return model

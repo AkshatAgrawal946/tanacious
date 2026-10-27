@@ -4,6 +4,10 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
+from src.campus_calendar import is_break
+
+WEEK_SLOTS = 7 * 96
+
 
 # Coarse relative hourly load by building type: what a facilities team knows about when each
 # kind of building is busy. Academic blocks peak with afternoon classes, libraries and hostels
@@ -41,11 +45,15 @@ def _reference_shape(interval: pd.DataFrame, timestamps: pd.DatetimeIndex, build
         modifier = _type_modifier(building_type, observed.groupby("building")["building_type"].first(), hour)
     else:
         observed, modifier = same_type.copy(), np.ones(len(hour))
-    observed["slot"] = observed["timestamp"].dt.dayofweek * 96 + observed["timestamp"].dt.hour * 4 + observed["timestamp"].dt.minute // 15
+    # Separate weekly profiles for term time and academic breaks (the calendar is known).
+    observed["slot"] = (is_break(observed["timestamp"]) * WEEK_SLOTS + observed["timestamp"].dt.day_of_week * 96
+                        + observed["timestamp"].dt.hour * 4 + observed["timestamp"].dt.minute // 15)
     profile = observed.groupby("slot")["kWh_consumed"].mean()
-    slots = timestamps.dayofweek * 96 + timestamps.hour * 4 + timestamps.minute // 15
+    slots = (is_break(timestamps) * WEEK_SLOTS + timestamps.day_of_week * 96
+             + timestamps.hour * 4 + timestamps.minute // 15)
     generic = float(observed["kWh_consumed"].mean())
-    shape = np.asarray([profile.get(slot, generic) for slot in slots], dtype=float)
+    # A break slot with no reference readings falls back to the same term-time slot.
+    shape = np.asarray([profile.get(slot, profile.get(slot % WEEK_SLOTS, generic)) for slot in slots], dtype=float)
     # Cooling is already in the metered reference profile, so no separate temperature uplift.
     return np.clip(shape * modifier, 1e-6, None)
 

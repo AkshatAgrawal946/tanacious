@@ -32,7 +32,7 @@ def main() -> None:
     output = Path("data/processed")
     output.mkdir(parents=True, exist_ok=True)
     reconstructed = reconstruct_all(interval, bills)
-    reconstructed.to_csv(output / "reconstructed_15min.csv", index=False)
+    reconstructed.round(3).to_csv(output / "reconstructed_15min.csv", index=False)
     metrics = masked_meter_evaluation(interval, bills)
     pd.DataFrame([metrics]).to_csv(output / "masked_meter_metrics.csv", index=False)
     print("Wrote data/processed/reconstructed_15min.csv")
@@ -43,7 +43,7 @@ def main() -> None:
     # Ground truth is opened only here, to score both models after they have predicted.
     hidden = pd.read_csv(Path("data/raw") / "ground_truth_15min.csv", parse_dates=["timestamp"])
     series, comparison = compare_models(interval, bills, hidden)
-    series.to_csv(output / "model_comparison_15min.csv", index=False)
+    series.round(3).to_csv(output / "model_comparison_15min.csv", index=False)
     comparison.to_csv(output / "model_comparison_metrics.csv", index=False)
     print("Wrote data/processed/model_comparison_15min.csv and model_comparison_metrics.csv")
     print(comparison.pivot_table(index="building", columns="model", values="mape_pct").round(1).to_string())

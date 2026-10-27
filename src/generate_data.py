@@ -1,10 +1,13 @@
-"""Create deterministic synthetic data for the Missing Meter demo."""
+"""Create deterministic synthetic data for the Missing Meter demo: one calendar year (2026)."""
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from src.campus_calendar import is_break
+
 SEED = 42
+START, END = "2026-01-01", "2026-12-31 23:45"
 BUILDINGS = {
     "B1_Hostel_A": ("hostel", 40, 60),
     "B2_Hostel_B": ("hostel", 35, 55),
@@ -14,8 +17,9 @@ BUILDINGS = {
 }
 INTERVAL_METERED = {"academic", "lab"}
 # A temporary clamp-on meter on bill-only buildings: their 15-minute readings are released for
-# this window only (inclusive); the rest of the summer stays bill-only.
-PILOT_METERS = {"B1_Hostel_A": ("2026-06-08", "2026-06-21"), "B4_Library": ("2026-06-08", "2026-06-21")}
+# this window only (inclusive); the rest of the year stays bill-only. Placed in term time so the
+# readings show normal use rather than the summer vacation.
+PILOT_METERS = {"B1_Hostel_A": ("2026-08-03", "2026-08-16"), "B4_Library": ("2026-08-03", "2026-08-16")}
 
 # Weekday occupancy (0-1) for each hour, by building type. Each type peaks at its own time:
 # academic during afternoon classes (2-4 PM), library and hostels in the evening, labs flat.
@@ -31,18 +35,27 @@ OCCUPANCY = {
 }
 # Weekend occupancy as a fraction of the weekday schedule.
 WEEKEND_FACTOR = {"academic": 0.15, "library": 0.7, "hostel": 1.0, "lab": 0.6}
+# Occupancy during academic breaks as a fraction of term time: classes stop, most students go
+# home, research labs keep running.
+BREAK_FACTOR = {"academic": 0.1, "library": 0.25, "hostel": 0.3, "lab": 0.7}
 
 
 def _temperature(ts: pd.DatetimeIndex, rng: np.random.Generator) -> np.ndarray:
     hour = ts.hour + ts.minute / 60
-    return 30 + 6 * np.sin(2 * np.pi * (hour - 9) / 24) + rng.normal(0, 1.5, len(ts))
+    days = ts.normalize()
+    day_idx = days.unique().get_indexer(days)
+    # Seasonal daily mean: hottest in late May (~33 C), coolest in winter (~21 C), plus day-to-day weather.
+    season = 27 + 6 * np.cos(2 * np.pi * (ts.day_of_year - 140) / 365)
+    weather = rng.normal(0, 1.2, day_idx.max() + 1)[day_idx]
+    return season + weather + 6 * np.sin(2 * np.pi * (hour - 9) / 24) + rng.normal(0, 1.5, len(ts))
 
 
 def _occupancy(ts: pd.DatetimeIndex, kind: str) -> np.ndarray:
     hour = ts.hour.to_numpy() + ts.minute.to_numpy() / 60
     schedule = OCCUPANCY[kind]
     weekday = np.interp(hour, np.arange(25), schedule + schedule[:1])
-    return np.where(ts.day_of_week >= 5, WEEKEND_FACTOR[kind], 1.0) * weekday
+    calendar = np.where(is_break(ts), BREAK_FACTOR[kind], 1.0)
+    return np.where(ts.day_of_week >= 5, WEEKEND_FACTOR[kind], 1.0) * calendar * weekday
 
 
 def _load(ts: pd.DatetimeIndex, temp: np.ndarray, kind: str, base: float, peak: float, rng: np.random.Generator) -> np.ndarray:
@@ -54,7 +67,7 @@ def _load(ts: pd.DatetimeIndex, temp: np.ndarray, kind: str, base: float, peak: 
 
 def _dropouts(values: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     result = values.copy()
-    for _ in range(3):
+    for _ in range(12):  # about one sensor dropout a month
         size = int(rng.integers(4, 49))  # one to twelve hours
         start = int(rng.integers(0, len(result) - size))
         result[start:start + size] = np.nan
@@ -64,7 +77,7 @@ def _dropouts(values: np.ndarray, rng: np.random.Generator) -> np.ndarray:
 def generate(output_dir: str | Path = "data/raw", seed: int = SEED) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Return interval observations, bills, and hidden evaluation truth."""
     rng = np.random.default_rng(seed)
-    ts = pd.date_range("2026-06-01", "2026-08-31 23:45", freq="15min")
+    ts = pd.date_range(START, END, freq="15min")
     temp = _temperature(ts, rng)
     full = pd.concat([
         pd.DataFrame({

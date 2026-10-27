@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 from src import ml_model
+from src.campus_calendar import is_break
 from src.compare import compare_models
 from src.generate_data import PILOT_METERS, generate
 from src.reconstruct import reconcile_monthly, reconstruct_building_month
@@ -102,3 +103,14 @@ def test_random_forest_has_no_dip_at_the_library_peak(tmp_path):
     profile = library.groupby(hour)["Random forest"].mean()
     # Library schedules at 6-7 PM match the lab's at 2-3 PM; the forest must not copy the lab's flatter peak.
     assert profile.loc[17.5:19.0].min() >= 0.95 * profile.loc[17.5:19.0].max()
+
+
+def test_generator_covers_a_year_with_quieter_breaks(tmp_path):
+    interval, bills, _ = generate(tmp_path)
+    assert bills.groupby("building").size().eq(12).all()
+    academic = interval[interval.building == "B3_Academic"].dropna(subset=["kWh_consumed"])
+    on_break = is_break(academic.timestamp)
+    weekday_daytime = (academic.timestamp.dt.day_of_week < 5) & academic.timestamp.dt.hour.between(10, 16)
+    term_load = academic.loc[weekday_daytime & ~on_break, "kWh_consumed"].mean()
+    break_load = academic.loc[weekday_daytime & on_break, "kWh_consumed"].mean()
+    assert break_load < 0.8 * term_load

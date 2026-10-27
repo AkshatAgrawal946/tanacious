@@ -36,9 +36,11 @@ Run tests with `pytest -q`.
 
 `monthly_totals.csv`: `building`, `building_type`, `month`, `monthly_kWh`.
 
-The bundled generator creates `data/raw/` files. `ground_truth_15min.csv` is demo-only and must never be used by the reconstruction pipeline.
+The bundled generator creates `data/raw/` files for all of 2026 (12 monthly bills per building), with seasonal temperature (hottest late May, coolest in winter). `ground_truth_15min.csv` is demo-only and must never be used by the reconstruction pipeline.
 
-Pilot meters (`PILOT_METERS` in `src/generate_data.py`): Hostel A and the Library get a temporary clamp-on meter for 8-21 June, so `interval_15min.csv` holds two weeks of their 15-minute readings. Both models use these weeks (they are the only data showing what an evening-peaking building looks like); the comparison scores both models only outside them.
+Academic calendar (`BREAKS` in `src/campus_calendar.py`, currently summer vacation 16 May - 19 July and winter break 19 Dec - 3 Jan; edit to match the college): occupancy drops during breaks, and both models are told which days are breaks.
+
+Pilot meters (`PILOT_METERS` in `src/generate_data.py`): Hostel A and the Library get a temporary clamp-on meter for 3-16 August (term time), so `interval_15min.csv` holds two weeks of their 15-minute readings. Both models use these weeks (they are the only data showing what an evening-peaking building looks like); the comparison scores both models only outside them.
 
 ## Demo claim
 
