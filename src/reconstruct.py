@@ -1,61 +1,9 @@
-"""Interpretable baseline reconstruction with a hard billing constraint."""
+"""Bill-constrained reconstruction: turn a predicted load shape into 15-minute readings that
+keep every real meter reading and add up exactly to each monthly bill."""
 from typing import Callable
 
 import numpy as np
 import pandas as pd
-
-from src.campus_calendar import is_break
-
-WEEK_SLOTS = 7 * 96
-
-
-# Coarse relative hourly load by building type: what a facilities team knows about when each
-# kind of building is busy. Academic blocks peak with afternoon classes, libraries and hostels
-# in the evening, labs stay high all day. Unknown types get a flat prior.
-TYPE_PRIORS = {
-    "academic": [.45] * 7 + [.5, .65, .8, .9, .9, .85, .95, 1., 1., .85, .65, .55, .5, .45, .45, .45, .45],
-    "library": [.4] * 7 + [.4, .5, .6, .65, .7, .7, .75, .8, .85, .9, .95, 1., 1., .95, .85, .7, .55],
-    "hostel": [.7, .65, .65, .65, .65, .7, .75, .75, .6, .5, .5, .5,
-               .55, .55, .55, .6, .7, .8, .9, 1., 1., .95, .9, .8],
-    "lab": [.65] * 7 + [.7, .8, .9, .95, .95, .95, .95, 1., 1., .95, .9, .85, .8, .75, .72, .7, .68],
-}
-
-
-def _type_prior(building_type: str, hour: np.ndarray) -> np.ndarray:
-    prior = TYPE_PRIORS.get(building_type, [1.0] * 24)
-    return np.interp(hour, np.arange(25), prior + prior[:1])
-
-
-def _type_modifier(building_type: str, reference_types: pd.Series, hour: np.ndarray) -> np.ndarray:
-    """Re-time the reference buildings' profile to the target type's daily pattern.
-
-    Used only when the target type has no smart meter: the ratio moves load towards the hours
-    the target type is busy and away from the hours the metered references are busy."""
-    reference = np.mean([_type_prior(kind, hour) for kind in reference_types], axis=0)
-    return _type_prior(building_type, hour) / reference
-
-
-def _reference_shape(interval: pd.DataFrame, timestamps: pd.DatetimeIndex, building_type: str) -> np.ndarray:
-    observed = interval.dropna(subset=["kWh_consumed"]).copy()
-    if observed.empty:
-        raise ValueError("at least one observed smart-meter value is required")
-    hour = np.asarray(timestamps.hour + timestamps.minute / 60, dtype=float)
-    same_type = observed[observed["building_type"] == building_type]
-    if same_type.empty:
-        modifier = _type_modifier(building_type, observed.groupby("building")["building_type"].first(), hour)
-    else:
-        observed, modifier = same_type.copy(), np.ones(len(hour))
-    # Separate weekly profiles for term time and academic breaks (the calendar is known).
-    observed["slot"] = (is_break(observed["timestamp"]) * WEEK_SLOTS + observed["timestamp"].dt.day_of_week * 96
-                        + observed["timestamp"].dt.hour * 4 + observed["timestamp"].dt.minute // 15)
-    profile = observed.groupby("slot")["kWh_consumed"].mean()
-    slots = (is_break(timestamps) * WEEK_SLOTS + timestamps.day_of_week * 96
-             + timestamps.hour * 4 + timestamps.minute // 15)
-    generic = float(observed["kWh_consumed"].mean())
-    # A break slot with no reference readings falls back to the same term-time slot.
-    shape = np.asarray([profile.get(slot, profile.get(slot % WEEK_SLOTS, generic)) for slot in slots], dtype=float)
-    # Cooling is already in the metered reference profile, so no separate temperature uplift.
-    return np.clip(shape * modifier, 1e-6, None)
 
 
 def reconcile_monthly(shape: np.ndarray, monthly_kwh: float) -> np.ndarray:
@@ -71,14 +19,14 @@ def reconcile_monthly(shape: np.ndarray, monthly_kwh: float) -> np.ndarray:
     return reconciled
 
 
-ShapeFn = Callable[[pd.DatetimeIndex, str], np.ndarray]
+ShapeFn = Callable[[pd.DatetimeIndex, str, str], np.ndarray]  # (timestamps, building, building_type)
 
 
 def reconstruct_building_month(interval: pd.DataFrame, bills: pd.DataFrame, building: str, month: str,
-                               shape_fn: ShapeFn | None = None) -> pd.DataFrame:
-    """Reconstruct one building-month. ``shape_fn(timestamps, building_type)`` gives the
-    relative load shape; by default the reference-profile baseline. The bill and any real
-    readings are applied the same way whichever model supplies the shape."""
+                               shape_fn: ShapeFn) -> pd.DataFrame:
+    """Reconstruct one building-month. ``shape_fn(timestamps, building, building_type)`` (the
+    Random Forest, see ``ml_model.shape_fn``) gives the relative load shape; real readings are
+    kept and the rest is scaled so the month matches its bill."""
     bill = bills[(bills["building"] == building) & (bills["month"].astype(str) == str(month))]
     if len(bill) != 1:
         raise ValueError(f"expected one bill for {building} in {month}")
@@ -86,10 +34,7 @@ def reconstruct_building_month(interval: pd.DataFrame, bills: pd.DataFrame, buil
     monthly_kwh = float(bill.iloc[0]["monthly_kWh"])
     period = pd.Period(str(month), freq="M")
     timestamps = pd.date_range(period.start_time, period.end_time, freq="15min")
-    if shape_fn is None:
-        shape = _reference_shape(interval, timestamps, building_type)
-    else:
-        shape = np.clip(np.asarray(shape_fn(timestamps, building_type), dtype=float), 1e-6, None)
+    shape = np.clip(np.asarray(shape_fn(timestamps, building, building_type), dtype=float), 1e-6, None)
     result = pd.DataFrame({
         "timestamp": timestamps, "building": building, "building_type": building_type,
         "month": str(month), "kWh_consumed": reconcile_monthly(shape, monthly_kwh),
@@ -127,6 +72,6 @@ def reconstruct_building_month(interval: pd.DataFrame, bills: pd.DataFrame, buil
     return result
 
 
-def reconstruct_all(interval: pd.DataFrame, bills: pd.DataFrame, shape_fn: ShapeFn | None = None) -> pd.DataFrame:
+def reconstruct_all(interval: pd.DataFrame, bills: pd.DataFrame, shape_fn: ShapeFn) -> pd.DataFrame:
     frames = [reconstruct_building_month(interval, bills, row.building, str(row.month), shape_fn) for row in bills.itertuples()]
     return pd.concat(frames, ignore_index=True)

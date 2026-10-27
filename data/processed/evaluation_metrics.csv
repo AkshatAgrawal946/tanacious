@@ -1,0 +1,6 @@
+building,building_type,evaluated_against,mae_kwh,mape_pct,peak_window_error_pct,true_peak_hour,predicted_peak_hour
+B1_Hostel_A,hostel,hidden ground truth,0.8436129292629478,5.960387027908898,1.2536652732459903,19,19
+B2_Hostel_B,hostel,hidden ground truth,0.8113647620641146,6.644515630010246,0.4663755982479314,19,19
+B3_Academic,academic,held-out meter,0.9315336683486551,14.523618320311558,0.20575299942179695,14,14
+B4_Library,library,hidden ground truth,0.6343867895200344,9.509870510969707,0.8554275704837038,18,18
+B5_Lab,lab,held-out meter,1.110751769950887,7.165461151296318,4.609011735956065,15,14
