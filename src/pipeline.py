@@ -12,7 +12,8 @@ from src.reconstruct import reconstruct_all, reconstruct_building_month
 
 def masked_meter_evaluation(interval: pd.DataFrame, bills: pd.DataFrame, building: str | None = None) -> dict[str, float]:
     """Treat a metered building as monthly-only without ever using its values as a reference."""
-    target = building or sorted(interval["building"].unique())[0]
+    # Default to the best-metered building; pilot-meter buildings only have a couple of weeks.
+    target = building or interval.groupby("building")["kWh_consumed"].count().sort_index().idxmax()
     truth = interval[interval["building"] == target].dropna(subset=["kWh_consumed"]).copy()
     reference = interval[interval["building"] != target].copy()
     predictions = [reconstruct_building_month(reference, bills, target, month) for month in sorted(truth["timestamp"].dt.to_period("M").astype(str).unique())]

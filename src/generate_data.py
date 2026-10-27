@@ -13,6 +13,9 @@ BUILDINGS = {
     "B5_Lab": ("lab", 50, 20),
 }
 INTERVAL_METERED = {"academic", "lab"}
+# A temporary clamp-on meter on bill-only buildings: their 15-minute readings are released for
+# this window only (inclusive); the rest of the summer stays bill-only.
+PILOT_METERS = {"B1_Hostel_A": ("2026-06-08", "2026-06-21"), "B4_Library": ("2026-06-08", "2026-06-21")}
 
 # Weekday occupancy (0-1) for each hour, by building type. Each type peaks at its own time:
 # academic during afternoon classes (2-4 PM), library and hostels in the evening, labs flat.
@@ -76,6 +79,10 @@ def generate(output_dir: str | Path = "data/raw", seed: int = SEED) -> tuple[pd.
     interval = full[full["building_type"].isin(INTERVAL_METERED)].copy()
     interval["kWh_consumed"] = interval.groupby("building")["kWh_consumed"].transform(lambda s: _dropouts(s.to_numpy(), rng))
     hidden = full[~full["building_type"].isin(INTERVAL_METERED)].copy()
+    pilots = [hidden[(hidden["building"] == building) & (hidden["timestamp"] >= start)
+                     & (hidden["timestamp"] < pd.Timestamp(end) + pd.Timedelta(days=1))]
+              for building, (start, end) in PILOT_METERS.items()]
+    interval = pd.concat([interval, *pilots], ignore_index=True)
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     interval.to_csv(output / "interval_15min.csv", index=False)

@@ -107,13 +107,17 @@ with reconstruction_tab:
 
 with compare_tab:
     series, metrics = comparison(interval, bills)
-    picked = series[series["building"] == building].dropna(subset=["actual"])
+    building_rows = series[series["building"] == building]
+    pilot_days = int(building_rows["is_pilot"].sum()) // 96
+    # Pilot-meter weeks are real readings both models keep, so they are left out of the comparison.
+    picked = building_rows[~building_rows["is_pilot"]].dropna(subset=["actual"])
     evaluated_against = picked["evaluated_against"].iloc[0]
     actual_label = ACTUAL_LABEL[evaluated_against]
     if evaluated_against == "held-out meter":
         st.caption(f"{building} has a smart meter. For a fair test both models rebuild it from the *other* meters and its bill only, then are checked against its real readings.")
     else:
-        st.caption(f"{building} only has a monthly bill. Both models rebuild it from the metered buildings; the hidden true load exists only because the data is synthetic.")
+        pilot_note = f" It had a {pilot_days}-day pilot meter; those days are used for training but not scored." if pilot_days else ""
+        st.caption(f"{building} only has a monthly bill. Both models rebuild it from the metered buildings and pilot-meter weeks; the hidden true load exists only because the data is synthetic.{pilot_note}")
 
     building_metrics = metrics[metrics["building"] == building].set_index("model")
     columns = st.columns(len(MODELS))

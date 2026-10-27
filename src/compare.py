@@ -1,7 +1,7 @@
 """Head-to-head evaluation of the baseline and the Random Forest on the same intervals.
 
 * Bill-only buildings (hostels, library): both models reconstruct from the metered buildings
-  and are scored against the hidden ground truth.
+  and any pilot-meter weeks, and are scored against the hidden ground truth outside those weeks.
 * Metered buildings (academic, lab): each is held out in turn, reconstructed from the other
   meters plus its own bill, and scored against its real readings.
 
@@ -45,23 +45,28 @@ def compare_models(interval: pd.DataFrame, bills: pd.DataFrame, hidden: pd.DataF
     forest = ml_model.shape_fn(ml_model.train(interval, bills, feature_set), interval)
     frames = []
     for building, building_type in bills.groupby("building")["building_type"].first().items():
-        if building in set(interval["building"]):
-            actual = interval[interval["building"] == building].set_index("timestamp")["kWh_consumed"]
-            predicted, evaluated_against = _held_out(interval, bills, building, feature_set), "held-out meter"
-        else:
+        readings = interval.loc[interval["building"] == building, "timestamp"]
+        if building in set(hidden["building"]):
             actual = hidden[hidden["building"] == building].set_index("timestamp")["kWh_consumed"]
             predicted = pd.DataFrame({
                 "Baseline": _reconstruct(interval, bills, building, None),
                 "Random forest": _reconstruct(interval, bills, building, forest),
             })
             evaluated_against = "hidden ground truth"
-        frame = predicted.assign(actual=actual.reindex(predicted.index)).rename_axis("timestamp").reset_index()
+            # Pilot-meter weeks are real readings both models keep as-is, so they are not scored.
+            is_pilot = predicted.index.isin(readings)
+        else:
+            actual = interval[interval["building"] == building].set_index("timestamp")["kWh_consumed"]
+            predicted, evaluated_against = _held_out(interval, bills, building, feature_set), "held-out meter"
+            is_pilot = False
+        frame = predicted.assign(actual=actual.reindex(predicted.index), is_pilot=is_pilot)
+        frame = frame.rename_axis("timestamp").reset_index()
         frames.append(frame.assign(building=building, building_type=building_type, evaluated_against=evaluated_against))
     series = pd.concat(frames, ignore_index=True)[
-        ["timestamp", "building", "building_type", "evaluated_against", "actual", *MODELS]]
+        ["timestamp", "building", "building_type", "evaluated_against", "is_pilot", "actual", *MODELS]]
 
     rows = []
-    for (building, building_type, evaluated_against), group in series.groupby(
+    for (building, building_type, evaluated_against), group in series[~series["is_pilot"]].groupby(
             ["building", "building_type", "evaluated_against"]):
         group = group.dropna(subset=["actual"])
         actual = group.set_index("timestamp")["actual"]

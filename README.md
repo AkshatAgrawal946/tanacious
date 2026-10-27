@@ -38,6 +38,8 @@ Run tests with `pytest -q`.
 
 The bundled generator creates `data/raw/` files. `ground_truth_15min.csv` is demo-only and must never be used by the reconstruction pipeline.
 
+Pilot meters (`PILOT_METERS` in `src/generate_data.py`): Hostel A and the Library get a temporary clamp-on meter for 8-21 June, so `interval_15min.csv` holds two weeks of their 15-minute readings. Both models use these weeks (they are the only data showing what an evening-peaking building looks like); the comparison scores both models only outside them.
+
 ## Demo claim
 
 This is synthetic data. The reconstructed curve is an operational estimate, not a measurement. The app makes the bill-total constraint explicit and provides a masked-meter evaluation route before any real-world claim is made.
