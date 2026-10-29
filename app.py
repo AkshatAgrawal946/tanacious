@@ -1,12 +1,14 @@
 """Streamlit dashboard for the Missing Meter MVP."""
 from pathlib import Path
 
+import numpy as np  # type: ignore[import-not-found]
 import pandas as pd  # type: ignore[import-not-found]
 import plotly.graph_objects as go  # type: ignore[import-not-found]
 import streamlit as st  # type: ignore[import-not-found]
 
 from src import ml_model, provenance
 from src.data import load_data
+from src.evaluate import score_series
 from src.generate_data import generate
 from src.reconstruct import reconstruct_all
 
@@ -17,6 +19,8 @@ EVALUATION_META = PROCESSED_DIR / "evaluation_metrics.meta.json"
 # keeps its slot, so changing the selection never repaints a series.
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 PEAK = "#e34948"
+BASE_LOAD = "#9aa0a6"  # neutral grey: critical load we never touch
+FLEX_LOAD = "#2a78d6"  # blue: weather-dependent load that is safe to shift
 MAX_MONTHS = len(SERIES)
 
 st.set_page_config(page_title="The Missing Meter", page_icon=":material/bolt:", layout="wide")
@@ -61,14 +65,25 @@ def reconstruction(files_signature: str, dataset_fingerprint: str, model_version
 
 
 @st.cache_data
-def tested_accuracy(dataset_fingerprint: str, metrics_signature: str) -> pd.DataFrame | None:
-    """Per-building accuracy from the last ``python -m src.pipeline`` run, only if that run scored
-    this exact dataset (its metadata records the fingerprint)."""
+def evaluation_series(dataset_fingerprint: str, evaluation_signature: str) -> pd.DataFrame | None:
+    """Per-interval predictions next to the truth from the last ``python -m src.pipeline`` run, only
+    if that run scored this exact dataset (its metadata records the fingerprint)."""
     meta = provenance.read_json(EVALUATION_META)
-    path = PROCESSED_DIR / "evaluation_metrics.csv"
+    path = PROCESSED_DIR / "evaluation_15min.csv"
     if not path.exists() or meta is None or meta.get("dataset_fingerprint") != dataset_fingerprint:
         return None
-    return pd.read_csv(path).set_index("building")
+    series = pd.read_csv(path, parse_dates=["timestamp"])
+    return series.assign(month=series["timestamp"].dt.to_period("M").astype(str))
+
+
+@st.cache_data
+def tested_accuracy(dataset_fingerprint: str, evaluation_signature: str, months: tuple[str, ...]) -> pd.DataFrame | None:
+    """Per-building accuracy over just the selected months."""
+    series = evaluation_series(dataset_fingerprint, evaluation_signature)
+    if series is None:
+        return None
+    scores = score_series(series[series["month"].isin(months)])
+    return scores.set_index("building") if not scores.empty else None
 
 
 def month_label(month: str) -> str:
@@ -99,12 +114,12 @@ def pretty(building: str) -> str:
 
 
 def layout(fig: go.Figure, y_title: str, y_top: float, x_title: str = "Hour of day",
-           height: int = 380, peak_band: bool = True, right_margin: int = 10) -> go.Figure:
+           height: int = 380, peak_band: bool = True) -> go.Figure:
     if peak_band:
         fig.add_vrect(x0=clock(16), x1=clock(20), fillcolor=PEAK, opacity=0.08, line_width=0,
                       annotation_text="4-8 PM peak", annotation_position="top left",
                       annotation_font={"size": 11, "color": PEAK})
-    fig.update_layout(height=height, hovermode="x unified", margin={"t": 24, "b": 10, "l": 10, "r": right_margin},
+    fig.update_layout(height=height, hovermode="x unified", margin={"t": 24, "b": 10, "l": 10, "r": 10},
                       legend={"orientation": "h", "y": -0.2, "x": 0, "title": None},
                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
     fig.update_yaxes(title=y_title, range=[0, y_top], rangemode="tozero", zeroline=False)
@@ -144,6 +159,18 @@ def monthly_bars(bills: pd.DataFrame, buildings: list[str], months: list[str], c
     fig.update_yaxes(title="Energy (MWh)", zeroline=False)
     fig.update_xaxes(showgrid=False)
     return fig
+
+
+def export_csv(frame: pd.DataFrame, temperature: pd.Series) -> bytes:
+    """SHARE: the unified dataset (real readings + imputed intervals) as CSV,
+    with a ``source`` column so finance and sustainability can tell measurement from estimate."""
+    out = frame.assign(
+        temperature_C=frame["timestamp"].map(temperature).round(1),
+        source=np.where(frame["is_observed"], "metered", "imputed"),
+    )
+    columns = ["timestamp", "building", "building_type", "month", "kWh_consumed", "kW", "temperature_C",
+               "source"]
+    return out[columns].to_csv(index=False, float_format="%.4f").encode()
 
 
 files_signature = data_files_signature()
@@ -239,6 +266,7 @@ with campus_tab:
                          "Average-day peak": st.column_config.NumberColumn(format="%.0f kW"),
                      })
 
+
 with building_tab:
     building = st.segmented_control("Building", buildings, default=buildings[0], required=True,
                                     format_func=pretty, label_visibility="collapsed")
@@ -255,34 +283,41 @@ with building_tab:
               delta_color="off", delta_arrow="off", border=True, height="stretch")
 
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.badge("Matches the bill", icon=":material/check_circle:", color="green",
-                 help=f"Reconstructed total = {own['kWh_consumed'].sum():,.1f} kWh; "
-                      f"billed = {own_bills['monthly_kWh'].sum():,.1f} kWh.")
-        accuracy = tested_accuracy(fingerprint, provenance.file_fingerprint(PROCESSED_DIR / "evaluation_metrics.csv", EVALUATION_META))
+        accuracy = tested_accuracy(fingerprint, provenance.file_fingerprint(PROCESSED_DIR / "evaluation_15min.csv", EVALUATION_META),
+                                   tuple(months))
         if accuracy is not None and building in accuracy.index and own["is_reconstructed"].any():
             row = accuracy.loc[building]
             how = ("against the hidden true load" if row.evaluated_against == "hidden ground truth"
                    else "by rebuilding it with its own meter hidden")
             st.badge(f"{row.mape_pct:.1f}% avg. error per interval", icon=":material/target:", color="blue",
-                     help=f"Tested over the year {how}.")
-            st.badge(f"{row.peak_window_error_pct:.1f}% error on 4-8 PM energy", color="blue")
+                     help=f"Tested over {period} {how}.")
+            st.badge(f"{row.peak_window_error_pct:.1f}% error on 4-8 PM energy", icon=":material/target:", color="blue")
 
-    own_year = rec[rec["building"] == building]
-    by_month = average_day(own_year, ["kW"], ["month"])
-    direct_labels = len(months) <= 4  # direct labels while they stay readable; the legend covers the rest
+    # Base load (critical plug load, servers, lab equipment) is the floor the building never drops below:
+    # the 5th percentile of 15-minute demand at any hour, capped at the average day's minimum so it is one
+    # flat line under the whole curve (hostels dip lowest mid-day, when students are out, not overnight).
+    # Everything above it is treated as flexible, weather-driven load (HVAC) that interventions may shift.
+    day = average_day(own, ["kW"])
+    base_kw = min(float(own["kW"].quantile(0.05)), float(day["kW"].min()))
+    day["base"] = base_kw
+    day["flexible"] = (day["kW"] - base_kw).clip(lower=0)
     fig = go.Figure()
-    for m in months:
-        rows = by_month[by_month["month"] == m]
-        fig.add_trace(go.Scatter(x=clock(rows["hour"]), y=rows["kW"], name=month_label(m), mode="lines",
-                                 line={"width": 2.5, "color": month_colors[m]},
-                                 hovertemplate="%{y:,.1f} kW<extra>" + month_label(m) + "</extra>"))
-        if direct_labels:
-            fig.add_annotation(x=clock(rows["hour"].iloc[-1]), y=rows["kW"].iloc[-1], text=pd.Period(m, "M").strftime("%b"),
-                               showarrow=False, xanchor="left", xshift=6, font={"color": month_colors[m], "size": 12})
-    if direct_labels:
-        fig.update_layout(showlegend=False)
-    chart_card(f"{pretty(building)} · average day by month",
-               layout(fig, "Average power (kW)", axis_top(by_month["kW"]), right_margin=44 if direct_labels else 10))
+    fig.add_trace(go.Scatter(x=clock(day["hour"]), y=day["base"], name="Base Load (Critical)", stackgroup="load",
+                             mode="lines", line={"width": 0.5, "color": BASE_LOAD}, fillcolor=BASE_LOAD,
+                             hovertemplate="%{y:,.1f} kW<extra>Base (critical)</extra>"))
+    fig.add_trace(go.Scatter(x=clock(day["hour"]), y=day["flexible"], name="Flexible Load (HVAC)", stackgroup="load",
+                             mode="lines", line={"width": 0.5, "color": FLEX_LOAD}, fillcolor=FLEX_LOAD,
+                             hovertemplate="%{y:,.1f} kW<extra>Flexible (HVAC)</extra>"))
+    own_year = rec[rec["building"] == building]
+    chart_card(f"{pretty(building)} · base vs. flexible load on an average day · {period}",
+               layout(fig, "Average power (kW)", axis_top(average_day(own_year, ["kW"], ["month"])["kW"])),
+               "Base load is the 5th percentile of 15-minute demand, held flat across the day; "
+               "everything above it is weather-dependent load.")
+    peak = day.loc[day["kW"].idxmax()]
+    peak_time = f"{int(peak.hour):02d}:{int(peak.hour % 1 * 60):02d}"
+    st.info(f"**At the average-day peak ({peak_time}), {peak.base:,.0f} kW is critical base load** that stays untouched; "
+            f"**{peak.flexible:,.0f} kW ({peak.flexible / peak.kW:.0%} of the peak) is flexible cooling/HVAC load** "
+            "that is safe for load-shifting interventions.", icon=":material/shield:")
 
     fig = go.Figure()
     for m in months:
@@ -292,9 +327,26 @@ with building_tab:
                                    hovertemplate="%{x|%d %b %H:%M}: %{y:,.1f} kW<extra></extra>"))
     year_own = rec[rec["building"] == building]
     chart_card(f"{pretty(building)} · 15-minute load",
-               layout(fig, "Power (kW)", axis_top(year_own["kW"]), x_title="Date", peak_band=False),
+               layout(fig, "Power (kW)", axis_top(year_own["kW"]),
+                      x_title="Date", peak_band=False),
                f"{int(own['is_observed'].sum()):,} of {len(own):,} intervals are real meter readings; the rest are "
                "reconstructed and scaled so each month matches its bill.")
 
     chart_card(f"{pretty(building)} · monthly energy", monthly_bars(bills, [building], months, building_colors),
                "Selected months are shown in full colour.")
+
+# SHARE: rendered last so it sits at the bottom of the sidebar. The CSV is built only when clicked
+# (``data`` is a callable).
+with st.sidebar:
+    st.divider()
+    scope = st.segmented_control("Export scope", ["Selected months", "Full year"], default="Selected months",
+                                 required=True, key="export_scope")
+    export_rows = selected if scope == "Selected months" else rec
+    temperature = ml_model.campus_temperature(interval)
+    st.download_button("Export Data Report", icon="⬇️", type="primary", width="stretch",
+                       data=lambda: export_csv(export_rows, temperature),
+                       file_name=f"missing_meter_{'_'.join(months) if scope == 'Selected months' else 'full_year'}.csv",
+                       mime="text/csv", on_click="ignore",
+                       help="Metered readings + AI-imputed intervals for every building, "
+                            "with a 'source' column marking which is which.")
+    st.caption(f"{len(export_rows):,} rows · {export_rows['is_observed'].mean():.0%} metered")
