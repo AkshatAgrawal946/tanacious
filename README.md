@@ -27,7 +27,8 @@ data/raw/*.csv ──► src/data.py        validation report: errors block, war
                       ▼
                    src/provenance.py   dataset fingerprints, environment, JSON artifacts
                       ▼
-                   app.py              Streamlit: Campus overview · Building
+                   src/simulate.py     what-if load shifting and trimming, tariff
+                   app.py              Streamlit: Campus overview · Building · Simulate
 ```
 
 ## Data contracts
@@ -71,7 +72,17 @@ Outputs: `data/processed/evaluation_metrics.csv`, `evaluation_15min.csv`, `recon
 
 ## Dashboard
 
-`python -m streamlit run app.py`. Tabs: **Campus overview** (all buildings stacked, monthly energy, summary table) and **Building** (one line per selected month, 15-minute load, monthly energy, tested accuracy).
+`python -m streamlit run app.py`. Tabs: **Campus overview** (all buildings stacked, monthly energy, summary table), **Building** (one line per selected month, 15-minute load, monthly energy, tested accuracy) and **Simulate** (what-if load shifting).
+
+**Simulate** (`src/simulate.py`) splits each building's load into a flat base load (5th percentile of 15-minute demand, never touched) and the flexible HVAC load above it, then applies a scenario to the selected months:
+
+- *Trim*: removes a share of flexible load at every hour (a setpoint raise, better controls).
+- *Move*: takes a share of the flexible 4-8 PM load and pre-cools it into an earlier window of the same day, plus a loss on the energy moved. The moved load fills the quietest intervals of the **campus** total first, so buildings do not pile into the same hours; each building-day keeps its own energy apart from the loss and the trim.
+- *Defaults*: move 25% into 10:00-16:00, 10% loss, no trim (`simulate.Scenario`). On the synthetic year this is the largest share that still gives the full cut in campus peak (-4.6% in an average month, -2.9% for the year) with no month's peak rising; beyond it the campus peak sits after 8 PM, so moving more only adds losses. The search covered windows ending at 4 PM and starting at most 6 hours earlier: earlier windows score better only because the flat loss ignores that a building cannot hold cooling that long.
+- *Cost*: time-of-use energy rates plus a demand charge on each building's monthly maximum 15-minute load. The default rates (`simulate.Tariff`, currency `CURRENCY` in `app.py`) are placeholders.
+- *Colours*: every change is red when it is a loss (more peak, energy or cost), grey when nothing changes and green when it is a gain, in the metrics and the building table.
+
+It is a planning sketch on reconstructed load, not a controls model: it assumes buildings can store the moved cooling, and for bill-only buildings the flexible load is itself an estimate.
 
 Caches are keyed by content hashes of the input files and dataset plus the model version; a saved Random Forest is reused only if its metadata sidecar (`models/random_forest.meta.json`) matches the dataset fingerprint, model version, features, calendar and scikit-learn version. Accuracy badges are shown only if the stored evaluation was computed on the current data.
 

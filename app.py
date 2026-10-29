@@ -6,7 +6,7 @@ import pandas as pd  # type: ignore[import-not-found]
 import plotly.graph_objects as go  # type: ignore[import-not-found]
 import streamlit as st  # type: ignore[import-not-found]
 
-from src import ml_model, provenance, uncertainty
+from src import ml_model, provenance, simulate, uncertainty
 from src.data import load_data
 from src.evaluate import score_series
 from src.generate_data import generate
@@ -22,7 +22,11 @@ PEAK = "#e34948"
 BASE_LOAD = "#9aa0a6"  # neutral grey: critical load we never touch
 RANGE_FILL = "rgba(107,114,128,0.35)"
 FLEX_LOAD = "#2a78d6"  # blue: weather-dependent load that is safe to shift
+# Gain/loss in the Simulate metrics and table: red for a loss, grey for no change, green for a gain.
+# greenColor/redColor in .streamlit/config.toml match, so metric deltas use the same shades.
+GAIN, LOSS, NO_CHANGE = "#1baf7a", PEAK, BASE_LOAD
 MAX_MONTHS = len(SERIES)
+CURRENCY = "₹"  # tariff currency in the Simulate tab; edit with the rates in simulate.Tariff
 
 st.set_page_config(page_title="The Missing Meter", page_icon=":material/bolt:", layout="wide")
 
@@ -252,7 +256,8 @@ rec["kW_low"], rec["kW_high"] = uncertainty.likely_range(cal and cal.interval, r
                                                          rec["timestamp"].dt.hour)
 selected = rec[rec["month"].isin(months)]
 
-campus_tab, building_tab = st.tabs([":material/apartment: Campus overview", ":material/domain: Building"])
+campus_tab, building_tab, simulate_tab = st.tabs([":material/apartment: Campus overview", ":material/domain: Building",
+                                                  ":material/tune: Simulate"])
 
 with campus_tab:
     campus = selected.groupby("timestamp")["kW"].sum()
@@ -358,12 +363,11 @@ with building_tab:
                      help=f"Tested over {period} {how}.")
             st.badge(f"{row.peak_window_error_pct:.1f}% error on 4-8 PM energy", icon=":material/target:", color="blue")
 
-    # Base load (critical plug load, servers, lab equipment) is the floor the building never drops below:
-    # the 5th percentile of 15-minute demand at any hour, capped at the average day's minimum so it is one
-    # flat line under the whole curve (hostels dip lowest mid-day, when students are out, not overnight).
-    # Everything above it is treated as flexible, weather-driven load (HVAC) that interventions may shift.
+    # Base load (critical plug load, servers, lab equipment) is the floor the building never drops below;
+    # everything above it is treated as flexible, weather-driven load (HVAC) that interventions may shift.
+    # The Simulate tab uses the same split.
     day = average_day(own, ["kW", "kW_imputed"])
-    base_kw = min(float(own["kW"].quantile(0.05)), float(day["kW"].min()))
+    base_kw = simulate.base_load(own["kW"], hour_of_day(own["timestamp"]))
     day["base"] = base_kw
     day["flexible"] = (day["kW"] - base_kw).clip(lower=0)
     fig = go.Figure()
@@ -408,6 +412,138 @@ with building_tab:
 
     chart_card(f"{pretty(building)} · monthly energy", monthly_bars(bills, [building], months, building_colors),
                "Selected months are shown in full colour.")
+
+with simulate_tab:
+    st.caption("What if part of each building's flexible (HVAC) load were pre-cooled earlier in the day, or trimmed "
+               "with a setpoint change? Base load is never touched, and every day keeps its own energy apart from "
+               "the pre-cooling loss and the trim.")
+    with st.container(border=True):
+        st.markdown("##### Scenario")
+        taking_part = st.multiselect("Buildings taking part", buildings, default=buildings, format_func=pretty)
+        s1, s2 = st.columns(2)
+        preset = simulate.Scenario()  # the defaults found by searching the year (see Scenario)
+        shift = s1.slider("Move flexible 4-8 PM load", 0, 100, round(preset.shift_share * 100), 5, format="%d%%",
+                          help="Share of the load above each building's base load, inside 4-8 PM, that is "
+                               "pre-cooled earlier instead.")
+        window = s2.slider("Pre-cool between", 0, simulate.PEAK_HOURS[0], preset.target_hours, format="%d:00",
+                           help="Moved load fills this window's quietest 15 minutes first, so it does not build a new peak.")
+        loss = s1.slider("Pre-cooling loss", 0, 50, round(preset.shift_loss * 100), 5, format="%d%%",
+                         help="Extra energy per kWh moved: a pre-cooled building leaks some of it back.")
+        trim = s2.slider("Trim flexible load", 0, 30, round(preset.trim * 100), 1, format="%d%%",
+                         help="Removed from flexible load at every hour, e.g. by raising the cooling setpoint "
+                              "(often quoted as a few percent of cooling energy per 1 °C).")
+        with st.expander(f"Tariff ({CURRENCY}, placeholder rates: use the campus's own)"):
+            t1, t2, t3 = st.columns(3)
+            default = simulate.Tariff()
+            tariff = simulate.Tariff(
+                off_peak=t1.number_input("Off-peak, per kWh", 0.0, value=default.off_peak, step=0.5),
+                peak=t2.number_input("4-8 PM, per kWh", 0.0, value=default.peak, step=0.5),
+                demand=t3.number_input("Demand, per kW-month", 0.0, value=default.demand, step=25.0,
+                                       help="Charged on each building's highest 15-minute load in each month."))
+
+    if not taking_part:
+        st.info("Pick at least one building to simulate.", icon=":material/domain:")
+    else:
+        scenario = simulate.Scenario(shift_share=shift / 100, target_hours=window, shift_loss=loss / 100, trim=trim / 100)
+        sim = simulate.simulate(selected[["timestamp", "building", "kW"]], scenario, taking_part)
+        campus_sim = sim.groupby("timestamp")[["kW", "kW_after"]].sum()
+        in_peak = simulate.in_window(sim["timestamp"])
+        # Rounded (and -0.0 turned into 0.0) so a null scenario reads as "+0", not "-0.0 MWh".
+        moved_kwh = round((sim.loc[in_peak, "kW"] - sim.loc[in_peak, "kW_after"]).sum() / 4) + 0.0
+        energy_change = round((sim["kW_after"] - sim["kW"]).sum() / 4) + 0.0
+        bill_before = simulate.cost(sim["timestamp"], sim["building"], sim["kW"], tariff)
+        bill_after = simulate.cost(sim["timestamp"], sim["building"], sim["kW_after"], tariff)
+        before_total, after_total = bill_before.to_numpy().sum(), bill_after.to_numpy().sum()
+
+        def change(change: float, before: float, text: str) -> dict:
+            """Metric delta arguments for a change where up is a loss (red) and down a gain (green). One that
+            rounds to 0 in its unit (kW, kWh, currency) is passed as the number 0, the only delta Streamlit
+            draws grey."""
+            if round(change) == 0:
+                return {"delta": 0, "delta_description": "no change", "delta_color": "inverse"}
+            return {"delta": f"{text} ({change / before:+.1%})", "delta_color": "inverse"}
+
+        def money(amount: float) -> str:
+            """'-₹8,827': the sign goes first, since Streamlit reads a delta's direction from its first character."""
+            return f"{'-' if amount < 0 else '+'}{CURRENCY}{abs(amount):,.0f}"
+
+        c1, c2, c3, c4 = st.columns(4)
+        peak_before, peak_after = campus_sim["kW"].max(), campus_sim["kW_after"].max()
+        c1.metric("Campus peak", f"{peak_after:,.0f} kW", border=True, height="stretch",
+                  **change(peak_after - peak_before, peak_before, f"{peak_after - peak_before:+,.0f} kW"),
+                  help="Highest 15-minute campus load over the selected months, after the scenario.")
+        c2.metric("Moved out of 4-8 PM", f"{moved_kwh / 1000:,.1f} MWh",
+                  delta=f"{moved_kwh / (sim.loc[in_peak, 'kW'].sum() / 4):.0%} of 4-8 PM energy",
+                  delta_color="off", delta_arrow="off", border=True, height="stretch")
+        c3.metric("Energy use", f"{(sim['kW_after'].sum() / 4) / 1000:,.1f} MWh", border=True, height="stretch",
+                  **change(energy_change, sim["kW"].sum() / 4, f"{energy_change:+,.0f} kWh"),
+                  help="Trim savings minus pre-cooling losses.")
+        c4.metric("Electricity cost", f"{CURRENCY}{after_total:,.0f}", border=True, height="stretch",
+                  **change(after_total - before_total, before_total, money(after_total - before_total)),
+                  help="Time-of-use energy charges plus demand charges, at the tariff above.")
+
+        def before_after(fig: go.Figure, x, before, after) -> None:
+            fig.add_trace(go.Scatter(x=x, y=before, name="Today", mode="lines",
+                                     line={"width": 1.5, "color": BASE_LOAD, "dash": "dash"},
+                                     hovertemplate="%{y:,.0f} kW<extra>Today</extra>"))
+            fig.add_trace(go.Scatter(x=x, y=after, name="With scenario", mode="lines",
+                                     line={"width": 2, "color": FLEX_LOAD},
+                                     hovertemplate="%{y:,.0f} kW<extra>With scenario</extra>"))
+
+        def precool_band(fig: go.Figure, x0, x1) -> None:
+            fig.add_vrect(x0=x0, x1=x1, fillcolor=FLEX_LOAD, opacity=0.08, line_width=0,
+                          annotation_text="pre-cool", annotation_position="top left",
+                          annotation_font={"size": 11, "color": FLEX_LOAD})
+
+        sim_day = average_day(campus_sim.reset_index(), ["kW", "kW_after"])
+        fig = go.Figure()
+        before_after(fig, clock(sim_day["hour"]), sim_day["kW"], sim_day["kW_after"])
+        precool_band(fig, clock(window[0]), clock(window[1]))
+        chart_card(f"Campus load on an average day · {period}",
+                   layout(fig, "Average power (kW)", axis_top(sim_day[["kW", "kW_after"]].max())),
+                   "Dashed: reconstructed load today. Solid: the same days with the scenario applied.")
+
+        peak_day = campus_sim["kW"].idxmax().normalize()
+        worst = campus_sim[(campus_sim.index >= peak_day) & (campus_sim.index < peak_day + pd.Timedelta(days=1))]
+        fig = go.Figure()
+        before_after(fig, clock(hour_of_day(worst.index.to_series())), worst["kW"], worst["kW_after"])
+        precool_band(fig, clock(window[0]), clock(window[1]))
+        chart_card(f"Campus peak day · {peak_day:%a %d %b}",
+                   layout(fig, "Power (kW)", axis_top(worst[["kW", "kW_after"]].max())),
+                   "The day with the highest 15-minute campus load. The demand charge is set by days like this, "
+                   "so this is where shaving the peak pays.")
+
+        by_building = sim.groupby("building")
+        per_building = by_building.agg(base=("base_kW", "first"), before=("kW", "max"))
+        per_building["peak_change"] = by_building["kW_after"].max() - per_building["before"]
+        per_building["moved"] = (sim[in_peak].groupby("building")[["kW", "kW_after"]].sum()
+                                 .pipe(lambda f: (f["kW"] - f["kW_after"]) / 4))
+        per_building["energy_change"] = (by_building["kW_after"].sum() - by_building["kW"].sum()) / 4
+        per_building["cost_change"] = bill_after.sum(axis=1) - bill_before.sum(axis=1)
+        per_building.index = per_building.index.map(pretty)
+        changes = ["peak_change", "energy_change", "cost_change"]
+        # Rounded first so a change that displays as 0 is grey rather than a red or green "0".
+        per_building[changes] = per_building[changes].round().add(0.0)
+
+        def gain_or_loss(value: float) -> str:
+            return f"color: {LOSS if value > 0 else GAIN if value < 0 else NO_CHANGE}"
+
+        with st.container(border=True):
+            st.markdown("##### Buildings in the scenario")
+            st.dataframe(per_building.rename_axis("Building").reset_index().style.map(gain_or_loss, subset=changes),
+                         width="stretch", hide_index=True,
+                         column_config={
+                             "base": st.column_config.NumberColumn("Base load", format="%.0f kW"),
+                             "before": st.column_config.NumberColumn("Peak today", format="%.0f kW"),
+                             "peak_change": st.column_config.NumberColumn("Peak change", format="%+.0f kW"),
+                             "moved": st.column_config.NumberColumn("Moved out of 4-8 PM", format="%.0f kWh"),
+                             "energy_change": st.column_config.NumberColumn("Energy change", format="%+.0f kWh"),
+                             "cost_change": st.column_config.NumberColumn(f"Cost change ({CURRENCY})", format="%+.0f"),
+                         })
+            st.caption("Red is a loss (more load or cost), green a gain, grey no change. Buildings not taking part "
+                       "show no base load and no change. For bill-only buildings the "
+                       "flexible load is itself reconstructed, so treat their figures as estimates (see the likely "
+                       "ranges in the Building tab).")
 
 # SHARE: rendered last so it sits at the bottom of the sidebar. The CSV is built only when clicked
 # (``data`` is a callable).

@@ -7,6 +7,9 @@ metricValueFontWeight = 600
 baseRadius = "0.75rem"
 showSidebarBorder = true
 showWidgetBorder = true
+# Metric deltas: the same red and green as GAIN/LOSS in app.py.
+redColor = "#e34948"
+greenColor = "#1baf7a"
 chartCategoricalColors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 
 [theme.light]
