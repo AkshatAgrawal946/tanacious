@@ -84,7 +84,7 @@ def test_settings_repr_hides_the_key():
 
 def test_capability_check_refuses_accounts_without_chronos(tmp_path):
     provider = _provider(tmp_path, FakeClient([_model("llama-3-8b", "Llama 3 8B")]))
-    with pytest.raises(AdaptionCapabilityError, match="no usable Chronos-2"):
+    with pytest.raises(AdaptionCapabilityError, match="cannot fine-tune Chronos-2.*models offered: llama-3-8b"):
         provider.verify_capability()
     with pytest.raises(AdaptionCapabilityError):
         provider.upload_dataset(tmp_path / "train.jsonl", "x", confirm=True)
@@ -163,3 +163,12 @@ def test_settings_read_dotenv_without_overriding_shell(tmp_path, monkeypatch):
 def test_placeholder_key_counts_as_unset(tmp_path, monkeypatch):
     monkeypatch.setenv("ADAPTION_API_KEY", "your-adaption-api-key")
     assert AdaptionSettings.from_env(None).api_key is None
+
+
+def test_capability_check_needs_a_choice_between_several_chronos_models(tmp_path):
+    client = FakeClient([_model("chronos-2-small", "Chronos-2 small"), _model("chronos-2", "Chronos-2")])
+    with pytest.raises(AdaptionCapabilityError, match="several Chronos models"):
+        _provider(tmp_path, client, chronos_model_id=None).verify_capability()
+    with pytest.raises(AdaptionCapabilityError, match="is not offered"):
+        _provider(tmp_path, client, chronos_model_id="chronos-3").verify_capability()
+    assert _provider(tmp_path, client).verify_capability()["id"] == "chronos-2"

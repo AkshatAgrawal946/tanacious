@@ -56,8 +56,9 @@ Observed readings were returned unchanged in every scenario (max absolute change
 
 ## Not run / unverified
 
-- **Adaption Labs fine-tuning: not run.** No `ADAPTION_API_KEY`; the published SDK documents LLM training only, and
-  whether the account lists a Chronos-2 model is unknown. No job was submitted, no data uploaded.
+- **Adaption Labs fine-tuning: not available for this account.** A live, read-only `adaption-check` on 2026-10-29
+  authenticated successfully (`GET /api/v1/training-models` → 200) but the account offers no Chronos training model.
+  No job was submitted, no data uploaded. The local LoRA fine-tune above is the only fine-tuned Chronos-2.
 - Live tests (`tests/test_live_integration.py`) were skipped in the default run (opt-in).
 - GPU inference/training was not tested.
 

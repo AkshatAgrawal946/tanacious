@@ -151,23 +151,37 @@ class AdaptionChronosProvider:
         return self._client
 
     # -- capability ----------------------------------------------------------------------------
-    def chronos_models(self) -> list[dict]:
-        """Training models whose id or name mentions Chronos (GET /api/v1/training-models)."""
-        response = self.client.training_models.list()
+    def training_models(self) -> list[dict]:
+        """Every model the account can train (GET /api/v1/training-models)."""
         return [{"id": m.id, "display_name": m.display_name, "methods": list(m.methods),
                  "training_types": list(m.training_types), "context_length": m.context_length}
-                for m in response.models if "chronos" in f"{m.id} {m.display_name}".lower()]
+                for m in self.client.training_models.list().models]
+
+    def chronos_models(self, models: list[dict] | None = None) -> list[dict]:
+        """Training models whose id or name mentions Chronos."""
+        models = self.training_models() if models is None else models
+        return [m for m in models if "chronos" in f"{m['id']} {m['display_name']}".lower()]
 
     def verify_capability(self) -> dict:
-        models = self.chronos_models()
+        everything = self.training_models()
+        models = self.chronos_models(everything)
         wanted = self.settings.chronos_model_id
-        match = next((m for m in models if m["id"] == wanted), None) if wanted else (models[0] if len(models) == 1 else None)
-        if match is None:
-            listed = ", ".join(m["id"] for m in models) or "none"
+        if not models:
+            offered = ", ".join(m["id"] for m in everything) or "none"
             raise AdaptionCapabilityError(
-                f"the Adaption account lists no usable Chronos-2 training model (requested {wanted!r}; Chronos models listed: {listed}). "
-                "Set ADAPTION_CHRONOS_MODEL_ID to one of the listed ids.")
-        return match
+                "this Adaption account cannot fine-tune Chronos-2: none of its training models is a Chronos model "
+                f"(models offered: {offered}). Ask Adaption to enable Chronos-2 for the account, or fine-tune locally "
+                "with `python -m src.forecasting.finetune local`.")
+        if wanted:
+            match = next((m for m in models if m["id"] == wanted), None)
+            if match is None:
+                raise AdaptionCapabilityError(f"ADAPTION_CHRONOS_MODEL_ID={wanted!r} is not offered; Chronos models offered: "
+                                              + ", ".join(m["id"] for m in models))
+            return match
+        if len(models) > 1:
+            raise AdaptionCapabilityError("several Chronos models are offered; set ADAPTION_CHRONOS_MODEL_ID to one of: "
+                                          + ", ".join(m["id"] for m in models))
+        return models[0]
 
     # -- data and jobs -------------------------------------------------------------------------
     def upload_dataset(self, path: Path, name: str, confirm: bool = False) -> str:
