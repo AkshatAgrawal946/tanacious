@@ -9,8 +9,15 @@ Target: each reading divided by the building's average interval energy over all 
 (total billed kWh / number of intervals), so buildings of different size share one scale while
 seasonal and vacation drops stay visible.
 
+Information availability: ``break_ratios`` and ``_training_rows`` read *every* bill of a building,
+including months after the reading being modelled. That is legitimate for retrospective
+reconstruction (completed months are billed), but those bills do not exist at a forecast origin,
+so this model must not be used for forecasting. ``src.forecasting.baselines.RandomForestForecaster``
+is the chronological Random Forest baseline that uses only information available at the origin.
+
 Train and save with ``python -m src.ml_model``.
 """
+import logging
 from pathlib import Path
 
 import joblib
@@ -18,11 +25,18 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
-from src.campus_calendar import is_break
+import sklearn
+
+from src import provenance
+from src.campus_calendar import BREAKS, is_break
 from src.reconstruct import ShapeFn
 
+log = logging.getLogger(__name__)
 SEED = 2026
 MODEL_PATH = Path("models/random_forest.joblib")
+# Bump when the features, target or hyperparameters change: cached models of another version are retrained.
+MODEL_VERSION = "rf-reconstruction-2"
+HYPERPARAMETERS = {"n_estimators": 100, "min_samples_leaf": 20, "max_features": 0.6}
 
 # What a facilities team knows about each building type without a meter. These are coarse
 # estimates, not measurements; edit them to match the college. Unknown types get flat values.
@@ -128,6 +142,8 @@ def build_features(timestamps: pd.DatetimeIndex, building_type: str, temperature
 
 
 def _training_rows(interval: pd.DataFrame, bills: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
+    if interval.attrs.get("evaluation_only"):
+        raise ValueError("evaluation ground truth was passed as training data")
     temperature = campus_temperature(interval)
     observed = interval.dropna(subset=["kWh_consumed"])
     if observed.empty:
@@ -152,8 +168,7 @@ def _training_rows(interval: pd.DataFrame, bills: pd.DataFrame) -> tuple[pd.Data
 def train(interval: pd.DataFrame, bills: pd.DataFrame, seed: int = SEED) -> RandomForestRegressor:
     """Fit on every real 15-minute reading in ``interval``."""
     features, target = _training_rows(interval, bills)
-    model = RandomForestRegressor(n_estimators=100, min_samples_leaf=20, max_features=0.6,
-                                  n_jobs=-1, random_state=seed)
+    model = RandomForestRegressor(**HYPERPARAMETERS, n_jobs=-1, random_state=seed)
     model.fit(features[FEATURES], target)
     return model
 
@@ -172,9 +187,26 @@ def shape_fn(model: RandomForestRegressor, interval: pd.DataFrame, bills: pd.Dat
     return predict
 
 
-def save(model: RandomForestRegressor, path: Path = MODEL_PATH) -> Path:
+def metadata_path(path: Path = MODEL_PATH) -> Path:
+    return Path(path).with_suffix(".meta.json")
+
+
+def expected_metadata(dataset_fingerprint: str, seed: int = SEED) -> dict:
+    """What a cached model must have been trained with to be reused for this dataset."""
+    return {"model_version": MODEL_VERSION, "features": FEATURES, "hyperparameters": HYPERPARAMETERS,
+            "seed": seed, "dataset_fingerprint": dataset_fingerprint, "calendar_breaks": BREAKS,
+            "sklearn_version": sklearn.__version__}
+
+
+def save(model: RandomForestRegressor, path: Path = MODEL_PATH, dataset_fingerprint: str | None = None,
+         seed: int = SEED) -> Path:
+    """Save the model and a metadata sidecar recording what it was trained on."""
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, path)
+    meta = expected_metadata(dataset_fingerprint or "unknown", seed)
+    provenance.write_json(metadata_path(path), {**meta, "trained_at": provenance.now_utc(),
+                                                "environment": provenance.environment()})
     return path
 
 
@@ -182,9 +214,33 @@ def load(path: Path = MODEL_PATH) -> RandomForestRegressor:
     return joblib.load(path)
 
 
+def load_compatible(dataset_fingerprint: str, path: Path = MODEL_PATH, seed: int = SEED) -> RandomForestRegressor | None:
+    """The saved model if its metadata matches this dataset, model version, features, calendar and
+    scikit-learn version; otherwise ``None`` (the caller retrains). Matching feature names alone is
+    not enough: a model trained on other data has the same features."""
+    path = Path(path)
+    stored = provenance.read_json(metadata_path(path))
+    if not path.exists() or stored is None:
+        log.info("no saved model with metadata at %s", path)
+        return None
+    expected = expected_metadata(dataset_fingerprint, seed)
+    stale = [key for key, value in expected.items() if provenance.config_hash({key: stored.get(key)}) != provenance.config_hash({key: value})]
+    if stale:
+        log.info("saved model at %s is stale (%s differ); retraining", path, ", ".join(stale))
+        return None
+    try:
+        model = load(path)
+    except Exception as error:  # corrupted or incompatible pickle
+        log.warning("could not load saved model %s: %s", path, error)
+        return None
+    if list(getattr(model, "feature_names_in_", [])) != FEATURES:
+        return None
+    return model
+
+
 if __name__ == "__main__":
     from src.data import load_data
 
     interval, bills = load_data()
-    path = save(train(interval, bills))
+    path = save(train(interval, bills), dataset_fingerprint=provenance.dataset_fingerprint(interval, bills))
     print(f"Trained a Random Forest on {interval['kWh_consumed'].notna().sum():,} readings; saved to {path}")

@@ -5,6 +5,8 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
+from src.data import BILL_TOLERANCE_KWH
+
 
 def reconcile_monthly(shape: np.ndarray, monthly_kwh: float) -> np.ndarray:
     """Scale a positive shape so its interval values sum exactly to the known bill."""
@@ -14,8 +16,9 @@ def reconcile_monthly(shape: np.ndarray, monthly_kwh: float) -> np.ndarray:
     if np.any(shape < 0) or not np.isfinite(shape).all() or shape.sum() <= 0:
         raise ValueError("shape must be finite, non-negative, and have positive mass")
     reconciled = shape * (monthly_kwh / shape.sum())
-    # Correct float drift on the final interval; this makes the accounting invariant explicit.
-    reconciled[-1] += monthly_kwh - reconciled.sum()
+    # Put the float drift on the largest interval (never pushes a value below zero); this makes the
+    # accounting invariant explicit.
+    reconciled[np.argmax(reconciled)] += monthly_kwh - reconciled.sum()
     return reconciled
 
 
@@ -34,7 +37,12 @@ def reconstruct_building_month(interval: pd.DataFrame, bills: pd.DataFrame, buil
     monthly_kwh = float(bill.iloc[0]["monthly_kWh"])
     period = pd.Period(str(month), freq="M")
     timestamps = pd.date_range(period.start_time, period.end_time, freq="15min")
-    shape = np.clip(np.asarray(shape_fn(timestamps, building, building_type), dtype=float), 1e-6, None)
+    shape = np.asarray(shape_fn(timestamps, building, building_type), dtype=float)
+    if shape.shape != (len(timestamps),):
+        raise ValueError(f"shape_fn returned {shape.shape} values for {len(timestamps)} intervals ({building} {month})")
+    if not np.isfinite(shape).all():
+        raise ValueError(f"shape_fn returned non-finite values for {building} in {month}")
+    shape = np.clip(shape, 1e-6, None)
     result = pd.DataFrame({
         "timestamp": timestamps, "building": building, "building_type": building_type,
         "month": str(month), "kWh_consumed": reconcile_monthly(shape, monthly_kwh),
@@ -50,21 +58,30 @@ def reconstruct_building_month(interval: pd.DataFrame, bills: pd.DataFrame, buil
     if observed.empty:
         return result
 
-    known = observed.set_index("timestamp")["kWh_consumed"]
+    if observed["timestamp"].duplicated().any():
+        raise ValueError(f"duplicate meter readings for {building} in {month}")
+    known = observed.set_index("timestamp")["kWh_consumed"].astype(float)
+    if not np.isfinite(known).all() or (known < 0).any():
+        raise ValueError(f"meter readings for {building} in {month} must be finite and non-negative")
+    off_grid = ~known.index.isin(timestamps)
+    if off_grid.any():
+        raise ValueError(f"{int(off_grid.sum())} meter readings for {building} in {month} are off the 15-minute grid")
     observed_mask = result["timestamp"].isin(known.index)
-    observed_kwh = float(result.loc[observed_mask, "timestamp"].map(known).sum())
+    observed_kwh = float(known.sum())
     remaining_kwh = monthly_kwh - observed_kwh
-    if remaining_kwh < -0.01:
+    if remaining_kwh < -BILL_TOLERANCE_KWH:
         raise ValueError(
             f"observed interval energy ({observed_kwh:.2f} kWh) exceeds the monthly bill "
             f"({monthly_kwh:.2f} kWh) for {building} in {month}"
         )
     if observed_mask.all():
-        if abs(remaining_kwh) > 0.01:
+        if abs(remaining_kwh) > BILL_TOLERANCE_KWH:
             raise ValueError(f"all intervals are observed but do not reconcile to the monthly bill for {building} in {month}")
     else:
+        # Reconcile from the model's shape, not the month-scaled values: those are all zero for a
+        # zero-kWh bill and would leave nothing to scale.
         result.loc[~observed_mask, "kWh_consumed"] = reconcile_monthly(
-            result.loc[~observed_mask, "kWh_consumed"].to_numpy(), max(remaining_kwh, 0.0)
+            shape[~observed_mask.to_numpy()], max(remaining_kwh, 0.0)
         )
     result.loc[observed_mask, "kWh_consumed"] = result.loc[observed_mask, "timestamp"].map(known)
     result.loc[observed_mask, "is_observed"] = True
