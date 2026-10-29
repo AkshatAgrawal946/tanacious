@@ -3,3 +3,5 @@ models/
 __pycache__/
 *.pyc
 .venv/
+data/external/
+.DS_Store
