@@ -190,11 +190,6 @@ def validation_report(interval: pd.DataFrame, bills: pd.DataFrame,
     return report
 
 
-def validate_inputs(interval: pd.DataFrame, bills: pd.DataFrame) -> list[str]:
-    """Return human-readable data quality errors; an empty list is valid."""
-    return validation_report(interval, bills).errors
-
-
 def load_data(data_dir: str | Path = "data/raw") -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load and validate the operational inputs. The hidden ground-truth file is never read here:
     it is evaluation-only (``src.evaluate.load_ground_truth``)."""

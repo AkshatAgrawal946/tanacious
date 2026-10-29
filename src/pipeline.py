@@ -7,7 +7,12 @@ from pathlib import Path
 
 from src import ml_model, provenance
 from src.data import load_data
-from src.evaluate import evaluate_model, evaluate_partial_metering, load_ground_truth, observed_preservation_error
+from src.evaluate import (
+    evaluate_model,
+    evaluate_partial_metering,
+    load_ground_truth,
+    observed_preservation_error,
+)
 from src.reconstruct import reconstruct_all
 
 PROCESSED = Path("data/processed")

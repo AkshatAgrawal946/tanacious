@@ -5,3 +5,6 @@ __pycache__/
 .venv/
 data/external/
 .DS_Store
+.claude/worktrees/
+# Written by `python -m src.pipeline`; nothing reads it, so it is not committed.
+data/processed/reconstructed_15min.csv

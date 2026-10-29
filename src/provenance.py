@@ -9,7 +9,7 @@ import json
 import logging
 import platform
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
 
@@ -53,9 +53,9 @@ def config_hash(config: dict) -> str:
 def git_commit() -> str | None:
     try:
         out = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=5,
-                             cwd=Path(__file__).resolve().parent)
+                             check=False, cwd=Path(__file__).resolve().parent)
         dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], capture_output=True,
-                               text=True, timeout=5, cwd=Path(__file__).resolve().parent)
+                               text=True, timeout=5, check=False, cwd=Path(__file__).resolve().parent)
         return out.stdout.strip() + ("-dirty" if dirty.stdout.strip() else "") if out.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
         return None
@@ -73,7 +73,7 @@ def environment() -> dict:
 
 
 def now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def write_json(path: Path, payload: dict) -> Path:

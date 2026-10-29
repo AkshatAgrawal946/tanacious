@@ -16,50 +16,60 @@ Campuses often experience a sharp electricity demand spike between 4 PM and 8 PM
 ---
 
 ## 🎯 The Problem: "The Missing Meter"
-* **Data Blind Spot:** Uneven meter granularity across campus buildings prevents accurate tracking of localized consumption[cite: 1].
+* **Data Blind Spot:** Uneven meter granularity across campus buildings prevents accurate tracking of localized consumption.
 * **Non-Linear Demand:** Electricity usage surges sharply in the late afternoon; a flat mathematical average of a monthly bill completely fails to capture the 4 PM – 8 PM spike.
-* **Safety Constraints:** Facilities cannot automate load shedding without knowing exactly which buildings (e.g., flexible hostel cooling vs. critical research labs) are consuming power at specific times[cite: 2].
+* **Safety Constraints:** Facilities cannot automate load shedding without knowing exactly which buildings (e.g., flexible hostel cooling vs. critical research labs) are consuming power at specific times.
 
 ## 💡 The Solution Architecture
-We divide our pipeline into three distinct tracks to securely simulate, impute, and visualize the campus grid[cite: 4].
+We divide our pipeline into three distinct tracks to securely simulate, impute, and visualize the campus grid.
 
 ### 1. The Smart Data Agent (Simulation Test Bed)
-Because real campus data with this specific failure mode is restricted, we built a highly realistic synthetic data generator (`src/generate_data.py`)[cite: 4]. 
-* Defines specific "Building Personas" (e.g., 24/7 Engineering Labs, or Hostels that spike at 7 AM and 6 PM)[cite: 4].
-* Injects environmental variables like Temperature and Solar Radiation so cooling loads scale mathematically[cite: 4].
-* Masks the 15-minute data for a subset of buildings to simulate the "Monthly Bill Only" constraint, saving the true data separately for final model evaluation[cite: 4].
+Because real campus data with this specific failure mode is restricted, we built a highly realistic synthetic data generator (`src/generate_data.py`). 
+* Defines specific "Building Personas" (e.g., research labs that run around the clock, academic blocks that peak with afternoon classes, or hostels and the library that peak in the evening), with weekends and academic breaks.
+* Injects a seasonal, daily temperature cycle so cooling loads rise on hot afternoons.
+* Masks the 15-minute data for a subset of buildings to simulate the "Monthly Bill Only" constraint, saving the true data separately for final model evaluation.
 
 ### 2. The ML Imputation Pipeline (Random Forest Core)
-* **Feature Engineering:** Extracts temporal context (Hour_of_Day, Day_of_Week, Is_Weekend) and combines it with environmental context (Temperature, Solar Radiation) and operational context (Building_Type)[cite: 4].
-* **Tree-Based Inference:** Trains a Random Forest model exclusively on the metered buildings, then infers the 15-minute intervals for unmetered buildings to accurately capture non-linear demand spikes[cite: 7].
-* **Smart Billing Reconciliation:** Applies a post-processing mathematical scaling rule to the AI's raw predictions to ensure the sum of the imputed 15-minute intervals perfectly matches the building's known monthly utility bill[cite: 7]. We utilize Additive Shifting or Peak Isolation to correct the baseline without artificially distorting the crucial 4 PM spike[cite: 7].
+* **Feature Engineering:** Combines calendar context (Is_Weekend, Is_Break), environmental context (Temperature, its 3-hour mean, cooling degrees) and operational context (each building type's expected daily schedule). Clock time is deliberately left out, so the model follows each type's own routine instead of copying the metered buildings' timing.
+* **Tree-Based Inference:** Trains a Random Forest on every real 15-minute reading (smart meters and temporary pilot meters), then infers the 15-minute load shape of bill-only buildings to capture non-linear demand spikes.
+* **Smart Billing Reconciliation:** Scales the predicted shape so that the imputed intervals plus any real readings add up exactly to the building's monthly utility bill (within 0.01 kWh). Real readings are never changed; only the missing intervals are estimated.
 
 ### 3. The Interactive Dashboard
-* Built with Streamlit (`app.py`), the dashboard plots the combined load curve to provide decision-ready visibility to facilities managers[cite: 4].
-* Isolates the 4 PM to 8 PM window to pinpoint which building types are driving the peak demand[cite: 4].
-* Overlays the model's predicted load curve against the hidden ground truth data, verifying imputation accuracy using MAE and RMSE metrics[cite: 4].
+* Built with Streamlit (`app.py`), the dashboard plots the combined load curve to provide decision-ready visibility to facilities managers.
+* Isolates the 4 PM to 8 PM window to pinpoint which building types are driving the peak demand.
+* Shows each building's tested accuracy and a likely range around the imputed load, simulates load shifting to cut the peak, and lets you upload real meter data, hide readings and see how closely the model rebuilds them.
 
 ---
 
 ## ⚙️ Tech Stack
-* **Data Processing:** `pandas`, `numpy` (Time-series resampling, feature engineering)[cite: 2]
-* **Machine Learning:** `scikit-learn` (Random Forest Regression)[cite: 2, 4]
-* **Frontend/Dashboard:** `streamlit`[cite: 2, 4]
+* **Data Processing:** `pandas`, `numpy` (Time-series resampling, feature engineering)
+* **Machine Learning:** `scikit-learn` (Random Forest Regression)
+* **Frontend/Dashboard:** `streamlit`, `plotly`
 
 ---
 
 ## 🗂 Project Structure
 ```text
 tanacious/
-├── 📁 data/                 # Generated datasets (data/raw/*.csv)
-├── 📁 notebooks/
-│   └── 01_baseline_eda.ipynb   # Resampling + 4–8 PM demand-spike chart
+├── 📄 app.py                 # Streamlit dashboard: Campus overview · Building · Simulate · Test on your data
 ├── 📁 src/
-│   └── generate_data.py        # Synthetic data generator / Smart Agent
-├── 📄 app.py                   # Streamlit interactive dashboard
-├── 📄 requirements.txt         # Project dependencies
-├── 📄 Problem Statement Justifications.pdf
-└── 📄 6abc0300be656_ai_synergy_hackathon_2026_round_1_case_file_redesigned.pdf
+│   ├── generate_data.py      # Synthetic campus data (the Smart Data Agent)
+│   ├── campus_calendar.py    # Academic breaks
+│   ├── data.py               # Input validation and loading
+│   ├── ml_model.py           # Random Forest load shape
+│   ├── reconstruct.py        # Bill reconciliation (real readings kept)
+│   ├── evaluate.py, metrics.py, pipeline.py, provenance.py   # Accuracy tests and their records
+│   ├── uncertainty.py        # Likely ranges from the tested errors
+│   ├── simulate.py           # What-if load shifting
+│   ├── backtest.py           # Test on uploaded meter data
+│   └── real_data.py          # Fetch and clean real campus data (BDG2)
+├── 📁 data/
+│   ├── raw/                  # Synthetic 2026 campus data
+│   ├── processed/            # Evaluation results
+│   └── real/                 # Real US university meter data, 2017 (CC BY-SA 4.0)
+├── 📁 tests/
+├── 📄 RESULTS.md             # Accuracy on the synthetic data
+└── 📄 requirements.txt
 ```
 
 ---

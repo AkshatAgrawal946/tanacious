@@ -22,9 +22,8 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-
 import sklearn
+from sklearn.ensemble import RandomForestRegressor
 
 from src import provenance
 from src.campus_calendar import BREAKS, is_break
@@ -229,7 +228,7 @@ def load_compatible(dataset_fingerprint: str, path: Path = MODEL_PATH, seed: int
         return None
     try:
         model = load(path)
-    except Exception as error:  # corrupted or incompatible pickle
+    except Exception as error:  # noqa: BLE001 - any unreadable pickle (corrupt, other versions) means retrain
         log.warning("could not load saved model %s: %s", path, error)
         return None
     if list(getattr(model, "feature_names_in_", [])) != FEATURES:

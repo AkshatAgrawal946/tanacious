@@ -479,7 +479,7 @@ with building_tab:
         add_likely_band(fig, rows["timestamp"], rows["kW_low"], rows["kW_high"], showlegend=i == 0, hover=False)
     for m in months:
         rows = own[own["month"] == m]
-        note = np.where(rows["is_observed"], " (metered)", [f" (likely {lo:,.0f}-{hi:,.0f})" if hi == hi else ""
+        note = np.where(rows["is_observed"], " (metered)", [f" (likely {lo:,.0f}-{hi:,.0f})" if not np.isnan(hi) else ""
                                                           for lo, hi in zip(rows["kW_low"], rows["kW_high"])])
         fig.add_trace(go.Scattergl(x=rows["timestamp"], y=rows["kW"], name=month_label(m), mode="lines",
                                    line={"width": 1, "color": month_colors[m]}, text=note,

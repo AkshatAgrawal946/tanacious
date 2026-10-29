@@ -112,7 +112,7 @@ def _hide_days(readings: pd.DataFrame, observed_fraction: float, seed: int) -> t
     days = readings["timestamp"].dt.normalize()
     unique = np.sort(days.unique())
     rng = np.random.default_rng(seed)
-    kept_days = rng.choice(unique, size=int(round(observed_fraction * len(unique))), replace=False)
+    kept_days = rng.choice(unique, size=round(observed_fraction * len(unique)), replace=False)
     hidden = ~days.isin(kept_days)
     return readings[~hidden], hidden
 

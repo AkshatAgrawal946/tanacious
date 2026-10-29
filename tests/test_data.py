@@ -2,11 +2,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.data import DataValidationError, load_data, validate_inputs, validation_report
+from src.data import DataValidationError, load_data, validation_report
 
 
 def test_validator_reports_required_columns():
-    issues = validate_inputs(pd.DataFrame(), pd.DataFrame())
+    issues = validation_report(pd.DataFrame(), pd.DataFrame()).errors
     assert len(issues) == 2
     assert "interval data is missing columns" in issues[0]
 

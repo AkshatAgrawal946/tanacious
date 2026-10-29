@@ -1,6 +1,6 @@
 """Bill-constrained reconstruction: turn a predicted load shape into 15-minute readings that
 keep every real meter reading and add up exactly to each monthly bill."""
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd

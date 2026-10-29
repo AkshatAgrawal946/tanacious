@@ -18,8 +18,9 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from src.metrics import PEAK_HOURS  # 4-8 PM, the window the dashboard highlights
+
 SLOTS_PER_DAY = 96
-PEAK_HOURS = (16, 20)  # 4-8 PM, the window the dashboard already highlights
 
 
 @dataclass(frozen=True)
