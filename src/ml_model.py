@@ -11,9 +11,8 @@ seasonal and vacation drops stay visible.
 
 Information availability: ``break_ratios`` and ``_training_rows`` read *every* bill of a building,
 including months after the reading being modelled. That is legitimate for retrospective
-reconstruction (completed months are billed), but those bills do not exist at a forecast origin,
-so this model must not be used for forecasting. ``src.forecasting.baselines.RandomForestForecaster``
-is the chronological Random Forest baseline that uses only information available at the origin.
+reconstruction (completed months are billed), but those bills would not exist when predicting
+the future, so this model must not be used for forecasting.
 
 Train and save with ``python -m src.ml_model``.
 """

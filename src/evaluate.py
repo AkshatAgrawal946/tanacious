@@ -1,5 +1,4 @@
-"""Accuracy check for the Random Forest reconstruction (Task A). Forecasting (Task B) has its own
-chronological protocol in ``src.forecasting.backtest``.
+"""Accuracy check for the Random Forest reconstruction.
 
 Scenarios (building-level holdouts; no hyperparameters are tuned on any of them):
 

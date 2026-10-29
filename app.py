@@ -7,22 +7,16 @@ import streamlit as st  # type: ignore[import-not-found]
 
 from src import ml_model, provenance
 from src.data import load_data
-from src.forecasting import selection
-from src.forecasting.backtest import fit_random_forest
-from src.forecasting.config import ForecastExperimentConfig
-from src.forecasting.data_prep import actuals, building_series, make_request
 from src.generate_data import generate
 from src.reconstruct import reconstruct_all
 
 DATA_DIR = Path("data/raw")
 PROCESSED_DIR = Path("data/processed")
 EVALUATION_META = PROCESSED_DIR / "evaluation_metrics.meta.json"
-FORECAST_CONFIG = Path("configs/forecast_benchmark.json")
 # Validated categorical palette (colour-blind safe, fixed order). Each building and each month
 # keeps its slot, so changing the selection never repaints a series.
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 PEAK = "#e34948"
-ACTUAL, RECONSTRUCTED, FORECAST = "#2a78d6", "#8a8f9c", "#eb6834"
 MAX_MONTHS = len(SERIES)
 
 st.set_page_config(page_title="The Missing Meter", page_icon=":material/bolt:", layout="wide")
@@ -75,37 +69,6 @@ def tested_accuracy(dataset_fingerprint: str, metrics_signature: str) -> pd.Data
     if not path.exists() or meta is None or meta.get("dataset_fingerprint") != dataset_fingerprint:
         return None
     return pd.read_csv(path).set_index("building")
-
-
-@st.cache_resource
-def forecast_forest(files_signature: str):
-    interval, _, _ = campus_data(files_signature)
-    return fit_random_forest(forecast_config(), interval)
-
-
-@st.cache_resource
-def forecaster_cache(files_signature: str) -> dict:
-    """Loaded forecasters (Chronos-2 weights load once per session)."""
-    return {}
-
-
-def forecast_config() -> ForecastExperimentConfig:
-    return ForecastExperimentConfig.from_json(FORECAST_CONFIG) if FORECAST_CONFIG.exists() else ForecastExperimentConfig()
-
-
-@st.cache_data(show_spinner="Forecasting the next 24 hours...")
-def day_ahead(files_signature: str, building: str, origin: str, model_name: str | None, summary_signature: str) -> dict:
-    interval, _, _ = campus_data(files_signature)
-    config = forecast_config()
-    series = building_series(interval, building)
-    request = make_request(series, building, pd.Timestamp(origin), config.context_steps, config.horizon_steps)
-    chosen = selection.forecast_with_fallback(
-        [request], model_name, selection.benchmark_summary(), device=config.device,
-        train_forest=lambda: forecast_forest(files_signature), cache=forecaster_cache(files_signature))
-    result = chosen.results[0]
-    return {"frame": result.to_frame().assign(actual=actuals(series, request.origin, request.horizon).to_numpy()),
-            "used": chosen.used, "requested": chosen.requested, "fallback_reason": chosen.fallback_reason,
-            "version": result.model_version}
 
 
 def month_label(month: str) -> str:
@@ -222,8 +185,7 @@ period = ", ".join(month_label(m) for m in months)
 rec = reconstruction(files_signature, fingerprint)
 selected = rec[rec["month"].isin(months)]
 
-campus_tab, building_tab, forecast_tab = st.tabs([":material/apartment: Campus overview", ":material/domain: Building",
-                                                  ":material/trending_up: Forecast"])
+campus_tab, building_tab = st.tabs([":material/apartment: Campus overview", ":material/domain: Building"])
 
 with campus_tab:
     campus = selected.groupby("timestamp")["kW"].sum()
@@ -336,82 +298,3 @@ with building_tab:
 
     chart_card(f"{pretty(building)} · monthly energy", monthly_bars(bills, [building], months, building_colors),
                "Selected months are shown in full colour.")
-
-with forecast_tab:
-    config = forecast_config()
-    summary = selection.benchmark_summary()
-    summary_ok = summary is not None and summary.get("dataset_fingerprint") == fingerprint
-    if summary is None:
-        st.info("No forecast benchmark yet: run `python -m src.forecasting.backtest`. Until then the app uses the "
-                "previous-week baseline by default and a 14-day history rule.", icon=":material/info:")
-    elif not summary_ok:
-        st.warning("The forecast benchmark was run on a different version of the data; its scores and default model "
-                   "are shown for reference only. Re-run `python -m src.forecasting.backtest`.", icon=":material/warning:")
-    measured = interval.groupby("building")["kWh_consumed"].count()
-    candidates = sorted(measured[measured > 0].index, key=lambda b: (-measured[b], b))  # longest meter history first
-    f1, f2, f3 = st.columns([2, 2, 3])
-    building_f = f1.selectbox("Building", candidates, format_func=pretty, key="forecast_building")
-    series = building_series(interval, building_f)
-    first_origin = (series.index[0] + pd.Timedelta(days=14)).normalize() + pd.Timedelta(days=1)
-    last_origin = (series.index[-1] - pd.Timedelta(days=1)).normalize() + pd.Timedelta(days=1)
-    if first_origin > last_origin:
-        first_origin = last_origin
-    default_origin = min(max(pd.Timestamp(config.test[0]), first_origin), last_origin)
-    origin_day = f2.date_input("Forecast the day starting", default_origin.date(), min_value=first_origin.date(),
-                               max_value=last_origin.date(), key="forecast_origin")
-    default_model = (summary or {}).get("default_model", selection.FALLBACK_MODEL)
-    options = [None, "chronos2_zero_shot", "seasonal_previous_week", "seasonal_previous_day", "random_forest_forecast"]
-    model_choice = f3.selectbox("Model", options, key="forecast_model",
-                                format_func=lambda m: f"Automatic ({default_model})" if m is None else m,
-                                help="Automatic uses the model that passed the benchmark's promotion gate, "
-                                     "otherwise the strongest simple baseline.")
-    origin = pd.Timestamp(origin_day)
-    routing = selection.route(series, building_f, origin, config.context_steps, summary if summary_ok else None)
-    if routing.mode == "reconstruct":
-        st.info(f"{pretty(building_f)} is not forecast for this day: {routing.reason}. Its history is shown as "
-                "bill-constrained reconstruction instead.", icon=":material/receipt_long:")
-    else:
-        out = day_ahead(files_signature, building_f, origin.isoformat(), model_choice,
-                        provenance.file_fingerprint(selection.SUMMARY_PATH))
-        frame = out["frame"]
-        if out["fallback_reason"]:
-            st.warning(f"{out['requested']} is unavailable ({out['fallback_reason']}); showing {out['used']} instead.",
-                       icon=":material/sync_problem:")
-        scores = pd.read_csv(selection.SUMMARY_PATH.parent / "scores.csv") if summary_ok and (selection.SUMMARY_PATH.parent / "scores.csv").exists() else None
-        test_row = None
-        if scores is not None:
-            rows = scores[(scores["split"] == "test") & (scores["building"] == "ALL") & (scores["model"] == out["used"])]
-            test_row = rows.iloc[0] if len(rows) else None
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Model", out["used"], delta=out["version"], delta_color="off", delta_arrow="off", border=True, height="stretch")
-        m2.metric("Forecast energy", f"{frame['predicted'].sum():,.0f} kWh", border=True, height="stretch")
-        m3.metric("Benchmark WAPE (test)", f"{test_row.wape_pct:.1f}%" if test_row is not None else "not measured",
-                  border=True, height="stretch", help="Weighted absolute % error on the held-out test month (synthetic data).")
-        coverage = test_row.get("p10_p90_coverage") if test_row is not None else None
-        m4.metric("P10-P90 coverage", f"{coverage:.0%}" if coverage is not None and pd.notna(coverage) else "n/a",
-                  border=True, height="stretch", help="Share of actual readings inside the band; nominal 80%.")
-
-        past = rec[(rec["building"] == building_f) & (rec["timestamp"] >= origin - pd.Timedelta(days=3))
-                   & (rec["timestamp"] < origin)]
-        fig = go.Figure()
-        observed = past["kW"].where(past["is_observed"])
-        fig.add_trace(go.Scatter(x=past["timestamp"], y=observed, name="Actual meter reading", mode="lines",
-                                 line={"color": ACTUAL, "width": 1.6}))
-        fig.add_trace(go.Scatter(x=past["timestamp"], y=past["kW"].where(past["is_reconstructed"]), name="Reconstructed",
-                                 mode="lines", line={"color": RECONSTRUCTED, "width": 1.6, "dash": "dot"}))
-        if {"q10", "q90"} <= set(frame.columns):
-            fig.add_trace(go.Scatter(x=frame["timestamp"], y=frame["q90"] * 4, mode="lines", line={"width": 0},
-                                     showlegend=False, hoverinfo="skip"))
-            fig.add_trace(go.Scatter(x=frame["timestamp"], y=frame["q10"] * 4, mode="lines", line={"width": 0}, fill="tonexty",
-                                     fillcolor="rgba(235,104,52,0.18)", name="Forecast P10-P90"))
-        fig.add_trace(go.Scatter(x=frame["timestamp"], y=frame["predicted"] * 4, name=f"Forecast ({out['used']})", mode="lines",
-                                 line={"color": FORECAST, "width": 2.2}))
-        if frame["actual"].notna().any():
-            fig.add_trace(go.Scatter(x=frame["timestamp"], y=frame["actual"] * 4, name="Actual (after the origin, for comparison)",
-                                     mode="lines", line={"color": ACTUAL, "width": 1, "dash": "dash"}, opacity=0.6))
-        fig.add_vline(x=origin, line_width=1, line_dash="dot", line_color="#888")
-        top = axis_top(pd.concat([past["kW"], frame["predicted"] * 4, frame.get("q90", frame["predicted"]) * 4, frame["actual"] * 4]).dropna())
-        chart_card(f"{pretty(building_f)} · next 24 hours from {origin:%d %b %Y}",
-                   layout(fig, "Power (kW)", top, x_title="Date", peak_band=False),
-                   f"Solid blue: real meter readings. Dotted grey: reconstructed (missing readings filled to match the bill). "
-                   f"Orange: forecast. Routing: {routing.reason}. Scores come from synthetic data and are not real-world accuracy.")

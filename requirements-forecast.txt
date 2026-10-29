@@ -1,5 +1,0 @@
-# Optional: zero-shot Chronos-2 forecasting. The reconstruction workflow and the forecasting
-# baselines run without these.
--r requirements.txt
-torch>=2.9
-chronos-forecasting==2.3.2

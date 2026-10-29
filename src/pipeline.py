@@ -1,6 +1,6 @@
 """CLI pipeline: train the Random Forest, reconstruct every building-month and check accuracy.
 
-``python -m src.pipeline`` (Task A, reconstruction). Forecast benchmarks: ``python -m src.forecasting.backtest``.
+``python -m src.pipeline``
 """
 import logging
 from pathlib import Path
