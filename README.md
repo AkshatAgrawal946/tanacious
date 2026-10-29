@@ -1,122 +1,62 @@
-<div align="center">
+# ⚡ Tanacious — Campus Energy Imputation Engine
 
-# ⚡ Tanacious — Campus Energy
+> **AI Synergy Hackathon 2026** | **Case 05: Energy & Environment ("The 4 PM Spike")**
 
-### *The Missing Meter: seeing the 4 PM spike in buildings that have no smart meter*
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io)
+[![Scikit-Learn](https://img.shields.io/badge/scikit--learn-%23F7931E.svg?logo=scikit-learn&logoColor=white)](https://scikit-learn.org/)
 
-![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)
-![Jupyter](https://img.shields.io/badge/Jupyter-Notebook-F37626?logo=jupyter&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Prototype_1-orange)
-![Hackathon](https://img.shields.io/badge/AI_Synergy_Hackathon-2026-blueviolet)
+## 📖 Overview
+**Tanacious** is a Data Integration & Load Imputation Engine designed to solve a fundamental energy blind spot for educational campuses. 
 
-</div>
+Campuses often experience a sharp electricity demand spike between 4 PM and 8 PM on weekdays, precisely when rooftop solar generation begins to drop[cite: 1]. Facilities teams cannot safely shift or optimize this load due to a massive data gap: some buildings report granular 15-minute interval data, while others only report aggregate monthly utility bills[cite: 1]. 
 
----
-
-## 📖 About
-
-Our campus electricity demand jumps sharply between **4 PM and 8 PM on weekdays**, right when rooftop solar output starts to fall. The catch: some buildings report **15-minute meter data**, while others only have a **monthly utility bill total**. 📉
-
-> 💡 *You cannot optimize or shift what you cannot measure.*
-
-**Tanacious** is a prototype for the *AI Synergy Hackathon 2026* (Case 05, **"The 4 PM Spike"**, Energy & Environment). The idea is to fill in the missing meters using machine learning, so facilities teams can see where the evening peak really comes from.
+*You cannot optimize what you cannot measure.*[cite: 1] Tanacious bridges this gap using machine learning to infer continuous 15-minute load curves for unmetered buildings, delivering a unified, real-time campus demand profile[cite: 1].
 
 ---
 
-## 🎯 The Problem
+## 🎯 The Problem: "The Missing Meter"
+* **Data Blind Spot:** Uneven meter granularity across campus buildings prevents accurate tracking of localized consumption[cite: 1].
+* **Non-Linear Demand:** Electricity usage surges sharply in the late afternoon; a flat mathematical average of a monthly bill completely fails to capture the 4 PM – 8 PM spike.
+* **Safety Constraints:** Facilities cannot automate load shedding without knowing exactly which buildings (e.g., flexible hostel cooling vs. critical research labs) are consuming power at specific times[cite: 2].
 
-| 🏢 Building type | 📊 Data available | 😕 Challenge |
-|---|---|---|
-| Metered buildings | 15-minute kWh readings | Occasional sensor-dropout gaps |
-| Unmetered buildings | Monthly bill totals only | Can't tell *when* they draw power |
+## 💡 The Solution Architecture
+We divide our pipeline into three distinct tracks to securely simulate, impute, and visualize the campus grid[cite: 4].
 
-A flat average of a monthly bill can't capture the evening surge, so the peak can't be attributed to a building or optimized.
+### 1. The Smart Data Agent (Simulation Test Bed)
+Because real campus data with this specific failure mode is restricted, we built a highly realistic synthetic data generator (`src/generate_data.py`)[cite: 4]. 
+* Defines specific "Building Personas" (e.g., 24/7 Engineering Labs, or Hostels that spike at 7 AM and 6 PM)[cite: 4].
+* Injects environmental variables like Temperature and Solar Radiation so cooling loads scale mathematically[cite: 4].
+* Masks the 15-minute data for a subset of buildings to simulate the "Monthly Bill Only" constraint, saving the true data separately for final model evaluation[cite: 4].
 
----
+### 2. The ML Imputation Pipeline (Random Forest Core)
+* **Feature Engineering:** Extracts temporal context (Hour_of_Day, Day_of_Week, Is_Weekend) and combines it with environmental context (Temperature, Solar Radiation) and operational context (Building_Type)[cite: 4].
+* **Tree-Based Inference:** Trains a Random Forest model exclusively on the metered buildings, then infers the 15-minute intervals for unmetered buildings to accurately capture non-linear demand spikes[cite: 7].
+* **Smart Billing Reconciliation:** Applies a post-processing mathematical scaling rule to the AI's raw predictions to ensure the sum of the imputed 15-minute intervals perfectly matches the building's known monthly utility bill[cite: 7]. We utilize Additive Shifting or Peak Isolation to correct the baseline without artificially distorting the crucial 4 PM spike[cite: 7].
 
-## 🧠 Our Approach
-
-1. 🔌 **Learn** load patterns from the buildings that *do* have 15-minute meters.
-2. 🌦️ **Use context** such as hour of day, weekday or weekend, temperature, and building type.
-3. 🧩 **Impute** continuous 15-minute load curves for unmetered buildings, constrained by their monthly totals.
-4. 📈 **Compare** predictions against ground truth to prove the model works.
-5. 🧑‍💼 **Support decisions**, with humans in the loop and **no autonomous shutdowns**.
-
-Candidate models: Linear Regression, Random Forest, XGBoost.
-
----
-
-## 🚀 Quick Start
-
-```bash
-# 1️⃣ Create and activate a virtual environment
-python3 -m venv .venv && source .venv/bin/activate
-
-# 2️⃣ Install dependencies
-pip install -r requirements.txt
-
-# 3️⃣ Generate the synthetic campus dataset (writes data/raw/*.csv)
-python src/generate_data.py
-
-# 4️⃣ Explore the baseline analysis
-jupyter notebook notebooks/01_baseline_eda.ipynb
-```
+### 3. The Interactive Dashboard
+* Built with Streamlit (`app.py`), the dashboard plots the combined load curve to provide decision-ready visibility to facilities managers[cite: 4].
+* Isolates the 4 PM to 8 PM window to pinpoint which building types are driving the peak demand[cite: 4].
+* Overlays the model's predicted load curve against the hidden ground truth data, verifying imputation accuracy using MAE and RMSE metrics[cite: 4].
 
 ---
 
-## 🗂️ Project Structure
+## ⚙️ Tech Stack
+* **Data Processing:** `pandas`, `numpy` (Time-series resampling, feature engineering)[cite: 2]
+* **Machine Learning:** `scikit-learn` (Random Forest Regression)[cite: 2, 4]
+* **Frontend/Dashboard:** `streamlit`[cite: 2, 4]
 
+---
+
+## 🗂 Project Structure
 ```text
 tanacious/
 ├── 📁 data/                 # Generated datasets (data/raw/*.csv)
 ├── 📁 notebooks/
 │   └── 01_baseline_eda.ipynb   # Resampling + 4–8 PM demand-spike chart
 ├── 📁 src/
-│   └── generate_data.py        # Synthetic data generator
-├── 📄 requirements.txt
+│   └── generate_data.py        # Synthetic data generator / Smart Agent
+├── 📄 app.py                   # Streamlit interactive dashboard
+├── 📄 requirements.txt         # Project dependencies
 ├── 📄 Problem Statement Justifications.pdf
 └── 📄 6abc0300be656_ai_synergy_hackathon_2026_round_1_case_file_redesigned.pdf
-```
-
----
-
-## 🧪 Synthetic Dataset
-
-`src/generate_data.py` simulates **hourly-to-15-minute kWh data for 5 buildings** from **Jun to Aug 2026**, with random multi-day gaps. True monthly totals are saved separately.
-
-- 🏠 Hostel A and Hostel B: monthly totals only
-- 🏫 Academic block: 15-minute metered
-- 📚 Library: monthly totals only
-- 🔬 Lab: 15-minute metered
-
-Each building follows a base load plus an evening peak, a cooling effect when it's hot, and lower weekend usage. 🌡️
-
-> ⚠️ The hidden ground-truth series is for **evaluation only** and is never used as model input.
-
----
-
-## 🗺️ Roadmap
-
-- [x] 🧱 Synthetic data generator
-- [x] 📓 Baseline EDA notebook with 4–8 PM spike chart
-- [ ] 🤖 Load imputation model (Pandas + scikit-learn)
-- [ ] 🚨 Missing-data fail-safes and flags
-- [ ] 🖥️ Streamlit dashboard: predicted vs ground-truth load curves
-- [ ] 🏷️ Peak attribution by zone and building type
-- [ ] 🧑‍💼 Human-in-the-loop decision support
-
----
-
-## 🛡️ Safety Boundaries
-
-- 🚫 No direct control of electrical infrastructure.
-- 🧪 Any simulated control is clearly labelled as a **simulation**.
-- 🔒 Critical loads (labs, server rooms) are never automated.
-
----
-
-<div align="center">
-
-Made with ❤️ for the **AI Synergy Hackathon 2026**
-
-</div>
