@@ -1,46 +1,122 @@
-# The Missing Meter - MVP
+<div align="center">
 
-A hackathon-ready campus energy prototype that reconstructs 15-minute electricity profiles for buildings with only monthly bills. Every reconstructed building-month is reconciled to the known bill exactly.
+# ⚡ Tanacious — Campus Energy
 
-## Run
+### *The Missing Meter: seeing the 4 PM spike in buildings that have no smart meter*
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)
+![Jupyter](https://img.shields.io/badge/Jupyter-Notebook-F37626?logo=jupyter&logoColor=white)
+![Status](https://img.shields.io/badge/Status-Prototype_1-orange)
+![Hackathon](https://img.shields.io/badge/AI_Synergy_Hackathon-2026-blueviolet)
+
+</div>
+
+---
+
+## 📖 About
+
+Our campus electricity demand jumps sharply between **4 PM and 8 PM on weekdays**, right when rooftop solar output starts to fall. The catch: some buildings report **15-minute meter data**, while others only have a **monthly utility bill total**. 📉
+
+> 💡 *You cannot optimize or shift what you cannot measure.*
+
+**Tanacious** is a prototype for the *AI Synergy Hackathon 2026* (Case 05, **"The 4 PM Spike"**, Energy & Environment). The idea is to fill in the missing meters using machine learning, so facilities teams can see where the evening peak really comes from.
+
+---
+
+## 🎯 The Problem
+
+| 🏢 Building type | 📊 Data available | 😕 Challenge |
+|---|---|---|
+| Metered buildings | 15-minute kWh readings | Occasional sensor-dropout gaps |
+| Unmetered buildings | Monthly bill totals only | Can't tell *when* they draw power |
+
+A flat average of a monthly bill can't capture the evening surge, so the peak can't be attributed to a building or optimized.
+
+---
+
+## 🧠 Our Approach
+
+1. 🔌 **Learn** load patterns from the buildings that *do* have 15-minute meters.
+2. 🌦️ **Use context** such as hour of day, weekday or weekend, temperature, and building type.
+3. 🧩 **Impute** continuous 15-minute load curves for unmetered buildings, constrained by their monthly totals.
+4. 📈 **Compare** predictions against ground truth to prove the model works.
+5. 🧑‍💼 **Support decisions**, with humans in the loop and **no autonomous shutdowns**.
+
+Candidate models: Linear Regression, Random Forest, XGBoost.
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# 1️⃣ Create and activate a virtual environment
+python3 -m venv .venv && source .venv/bin/activate
+
+# 2️⃣ Install dependencies
 pip install -r requirements.txt
-python -m src.generate_data   # synthetic campus data
-python -m src.pipeline        # train + save the Random Forest, reconstruct, check accuracy
-.\run_app.ps1
+
+# 3️⃣ Generate the synthetic campus dataset (writes data/raw/*.csv)
+python src/generate_data.py
+
+# 4️⃣ Explore the baseline analysis
+jupyter notebook notebooks/01_baseline_eda.ipynb
 ```
 
-`python -m src.ml_model` trains and saves only the Random Forest (`models/random_forest.joblib`, not committed).
+---
 
-Run tests with `pytest -q`.
+## 🗂️ Project Structure
 
-`app.py` is a Streamlit page, not a standalone Python script. Running `python app.py` starts it in Streamlit's "bare mode" and only produces warnings; use `run_app.ps1` (or `python -m streamlit run app.py`) to start the local web server and open the dashboard.
+```text
+tanacious/
+├── 📁 data/                 # Generated datasets (data/raw/*.csv)
+├── 📁 notebooks/
+│   └── 01_baseline_eda.ipynb   # Resampling + 4–8 PM demand-spike chart
+├── 📁 src/
+│   └── generate_data.py        # Synthetic data generator
+├── 📄 requirements.txt
+├── 📄 Problem Statement Justifications.pdf
+└── 📄 6abc0300be656_ai_synergy_hackathon_2026_round_1_case_file_redesigned.pdf
+```
 
-## What is implemented
+---
 
-- CSV schema and data-quality validation
-- Random Forest model (`src/ml_model.py`): learns from every real 15-minute reading how load follows each building type's daily schedule, weekend activity, the temperature and the academic calendar, then predicts the load shape for every building. Building-type knowledge (`TYPE_SCHEDULES`, `TYPE_CALENDAR`) is a coarse facilities estimate to edit for the college. Clock time is deliberately not an input: the forest would copy the metered buildings' afternoon peak onto hostels and the library
-- Vacation level from the bills (`break_ratios`): each building's break-day energy relative to a term day is read from its own all-break versus all-term monthly bills and applied on break days, so months that are part term and part vacation (May, July, December) are split correctly even for building types the forest has not seen metered
-- Monthly-bill reconciliation (`sum(interval kWh) == monthly_kWh`); real meter readings are kept and only the gaps are estimated
-- Observed versus reconstructed labels
-- Accuracy check (`src/evaluate.py`): bill-only buildings are scored against the hidden truth (pilot weeks excluded) and each metered building is rebuilt with its own meter hidden. Results go to `data/processed/evaluation_metrics.csv`
-- Streamlit dashboard that reads the campus data directly (generating it on first launch). Pick a building and up to 8 months; charts average over all days and show average power in kW with y-axes fixed to the busiest month of the year, so selections can be compared by eye. Tabs: "Campus overview" (all buildings stacked, monthly energy by building, summary table) and "Building" (one line per selected month, 15-minute load, monthly energy, tested accuracy)
+## 🧪 Synthetic Dataset
 
-## Input schema
+`src/generate_data.py` simulates **hourly-to-15-minute kWh data for 5 buildings** from **Jun to Aug 2026**, with random multi-day gaps. True monthly totals are saved separately.
 
-`interval_15min.csv`: `timestamp`, `building`, `building_type`, `temperature`, `kWh_consumed`.
+- 🏠 Hostel A and Hostel B: monthly totals only
+- 🏫 Academic block: 15-minute metered
+- 📚 Library: monthly totals only
+- 🔬 Lab: 15-minute metered
 
-`monthly_totals.csv`: `building`, `building_type`, `month`, `monthly_kWh`.
+Each building follows a base load plus an evening peak, a cooling effect when it's hot, and lower weekend usage. 🌡️
 
-The bundled generator creates `data/raw/` files for all of 2026 (12 monthly bills per building), with seasonal temperature (hottest late May, coolest in winter). `ground_truth_15min.csv` is demo-only and must never be used by the reconstruction pipeline.
+> ⚠️ The hidden ground-truth series is for **evaluation only** and is never used as model input.
 
-Academic calendar (`BREAKS` in `src/campus_calendar.py`, currently summer vacation 16 May - 19 July and winter break 19 Dec - 3 Jan; edit to match the college): occupancy drops during breaks, and so does the always-on load (`BREAK_STANDBY`: closed blocks switch most lighting, servers and AC off; labs keep running). The model is told which days are breaks.
+---
 
-Pilot meters (`PILOT_METERS` in `src/generate_data.py`): Hostel A and the Library get a temporary clamp-on meter for two fortnights, 8-21 June (summer vacation) and 3-16 August (term time), so `interval_15min.csv` holds four weeks of their 15-minute readings. The model trains on these weeks (they are the only data showing what an evening-peaking building looks like, busy and near-empty); the accuracy check scores it only outside them.
+## 🗺️ Roadmap
 
-## Demo claim
+- [x] 🧱 Synthetic data generator
+- [x] 📓 Baseline EDA notebook with 4–8 PM spike chart
+- [ ] 🤖 Load imputation model (Pandas + scikit-learn)
+- [ ] 🚨 Missing-data fail-safes and flags
+- [ ] 🖥️ Streamlit dashboard: predicted vs ground-truth load curves
+- [ ] 🏷️ Peak attribution by zone and building type
+- [ ] 🧑‍💼 Human-in-the-loop decision support
 
-This is synthetic data. The reconstructed curve is an operational estimate, not a measurement. The app makes the bill-total constraint explicit and the accuracy check (hidden-meter and hidden-truth scoring) should be repeated on real data before any real-world claim is made.
+---
+
+## 🛡️ Safety Boundaries
+
+- 🚫 No direct control of electrical infrastructure.
+- 🧪 Any simulated control is clearly labelled as a **simulation**.
+- 🔒 Critical loads (labs, server rooms) are never automated.
+
+---
+
+<div align="center">
+
+Made with ❤️ for the **AI Synergy Hackathon 2026**
+
+</div>
