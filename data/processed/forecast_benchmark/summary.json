@@ -1,0 +1,235 @@
+{
+  "config": {
+    "buildings": [
+      "B3_Academic",
+      "B5_Lab"
+    ],
+    "chronos_model_id": "amazon/chronos-2",
+    "config_version": 1,
+    "context_steps": 1344,
+    "covariate_scenario": "calendar",
+    "device": "cpu",
+    "history_lengths_days": [
+      1,
+      2,
+      3,
+      7,
+      14
+    ],
+    "horizon_steps": 96,
+    "inference_timeout_s": 300.0,
+    "max_latency_s_per_forecast": 5.0,
+    "max_missing_target_fraction": 0.5,
+    "max_peak_energy_error_regression_pct_points": 1.0,
+    "max_peak_timing_regression_min": 30.0,
+    "min_relative_wape_improvement": 0.1,
+    "origin_stride_steps": 96,
+    "quantile_levels": [
+      0.1,
+      0.5,
+      0.9
+    ],
+    "seed": 2026,
+    "test": [
+      "2026-09-01",
+      "2026-10-01"
+    ],
+    "train": [
+      "2026-01-01",
+      "2026-08-01"
+    ],
+    "validation": [
+      "2026-08-01",
+      "2026-09-01"
+    ]
+  },
+  "config_hash": "d5075e51212d5234",
+  "created_at": "2026-10-29T11:33:29+00:00",
+  "dataset_fingerprint": "efad85610ab87cff",
+  "default_model": "chronos2_finetuned_local",
+  "environment": {
+    "git_commit": "38a9871-dirty",
+    "packages": {
+      "adaption": null,
+      "chronos-forecasting": "2.3.2",
+      "numpy": "2.5.4",
+      "pandas": "3.1.0",
+      "scikit-learn": "1.9.1",
+      "streamlit": "1.66.1",
+      "torch": "2.15.0",
+      "transformers": "5.21.1"
+    },
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.7"
+  },
+  "gate_split": "test",
+  "gates": {
+    "chronos2_finetuned_local": {
+      "baseline": "seasonal_previous_week",
+      "candidate": "chronos2_finetuned_local",
+      "checks": {
+        "latency_ok": true,
+        "latency_s_per_forecast": 0.09347104513241598,
+        "peak_energy_ok": true,
+        "peak_timing_ok": true,
+        "relative_wape_improvement": 0.2588090768604667,
+        "wape_ok": true
+      },
+      "default_model": "chronos2_finetuned_local",
+      "promoted": true
+    },
+    "chronos2_zero_shot": {
+      "baseline": "seasonal_previous_week",
+      "candidate": "chronos2_zero_shot",
+      "checks": {
+        "latency_ok": true,
+        "latency_s_per_forecast": 0.07879374583329385,
+        "peak_energy_ok": true,
+        "peak_timing_ok": true,
+        "relative_wape_improvement": 0.2505645092040208,
+        "wape_ok": true
+      },
+      "default_model": "chronos2_zero_shot",
+      "promoted": true
+    }
+  },
+  "history_threshold": {
+    "by_history_days": [
+      {
+        "history_days": 1,
+        "wape_pct": 15.434704147572841
+      },
+      {
+        "history_days": 2,
+        "wape_pct": 9.131268519331448
+      },
+      {
+        "history_days": 3,
+        "wape_pct": 8.090288900694027
+      },
+      {
+        "history_days": 7,
+        "wape_pct": 5.796517362319811
+      },
+      {
+        "history_days": 14,
+        "wape_pct": 5.240493175150627
+      }
+    ],
+    "min_history_days": 14,
+    "min_history_steps": 1344,
+    "model": "chronos2_finetuned_local",
+    "rule": "shortest history with validation WAPE <= 1.05 x full-context WAPE",
+    "status": "measured"
+  },
+  "requests_per_split": {
+    "test": 30,
+    "validation": 31
+  },
+  "rf_training_cutoff": "2026-07-31 23:45:00",
+  "runs": [
+    {
+      "forecasts": 62,
+      "latency_s_per_forecast": 0.001225240599934853,
+      "model": "seasonal_previous_day",
+      "model_version": "seasonal-96-v1",
+      "process_peak_rss_mb": 429.15625,
+      "split": "validation",
+      "status": "measured",
+      "wall_time_s": 0.07596491719596088
+    },
+    {
+      "forecasts": 62,
+      "latency_s_per_forecast": 0.0011246982556317121,
+      "model": "seasonal_previous_week",
+      "model_version": "seasonal-672-v1",
+      "process_peak_rss_mb": 429.3125,
+      "split": "validation",
+      "status": "measured",
+      "wall_time_s": 0.06973129184916615
+    },
+    {
+      "forecasts": 62,
+      "latency_s_per_forecast": 0.017922362226301863,
+      "model": "random_forest_forecast",
+      "model_version": "rf-forecast-v1",
+      "process_peak_rss_mb": 429.953125,
+      "split": "validation",
+      "status": "measured",
+      "wall_time_s": 1.1111864580307156
+    },
+    {
+      "forecasts": 62,
+      "latency_s_per_forecast": 0.1617294563085682,
+      "model": "chronos2_zero_shot",
+      "model_version": "amazon/chronos-2",
+      "process_peak_rss_mb": 1718.75,
+      "split": "validation",
+      "status": "measured",
+      "wall_time_s": 10.027226291131228
+    },
+    {
+      "forecasts": 62,
+      "latency_s_per_forecast": 0.11231545161365741,
+      "model": "chronos2_finetuned_local",
+      "model_version": "d5075e51212d5234-9ef79d50f35d6614",
+      "process_peak_rss_mb": 2199.28125,
+      "split": "validation",
+      "status": "measured",
+      "wall_time_s": 6.96355800004676
+    },
+    {
+      "forecasts": 60,
+      "latency_s_per_forecast": 0.0011030180690189202,
+      "model": "seasonal_previous_day",
+      "model_version": "seasonal-96-v1",
+      "process_peak_rss_mb": 2201.078125,
+      "split": "test",
+      "status": "measured",
+      "wall_time_s": 0.06618108414113522
+    },
+    {
+      "forecasts": 60,
+      "latency_s_per_forecast": 0.0010905132008095582,
+      "model": "seasonal_previous_week",
+      "model_version": "seasonal-672-v1",
+      "process_peak_rss_mb": 2201.3125,
+      "split": "test",
+      "status": "measured",
+      "wall_time_s": 0.0654307920485735
+    },
+    {
+      "forecasts": 60,
+      "latency_s_per_forecast": 0.017239752784371377,
+      "model": "random_forest_forecast",
+      "model_version": "rf-forecast-v1",
+      "process_peak_rss_mb": 2201.890625,
+      "split": "test",
+      "status": "measured",
+      "wall_time_s": 1.0343851670622826
+    },
+    {
+      "forecasts": 60,
+      "latency_s_per_forecast": 0.07879374583329385,
+      "model": "chronos2_zero_shot",
+      "model_version": "amazon/chronos-2",
+      "process_peak_rss_mb": 2203.859375,
+      "split": "test",
+      "status": "measured",
+      "wall_time_s": 4.727624749997631
+    },
+    {
+      "forecasts": 60,
+      "latency_s_per_forecast": 0.09347104513241598,
+      "model": "chronos2_finetuned_local",
+      "model_version": "d5075e51212d5234-9ef79d50f35d6614",
+      "process_peak_rss_mb": 2205.421875,
+      "split": "test",
+      "status": "measured",
+      "wall_time_s": 5.608262707944959
+    }
+  ],
+  "selection_split": "validation",
+  "strongest_simple_baseline": "seasonal_previous_week",
+  "task": "forecasting"
+}
