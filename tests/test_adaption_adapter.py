@@ -146,3 +146,20 @@ def test_retrieve_rejects_path_traversal(tmp_path):
     with pytest.raises(AdaptionConfigError, match="unsafe path"):
         provider.retrieve("run_123", tmp_path / "ckpt")
     assert not (tmp_path / "evil.json").exists()
+
+
+def test_settings_read_dotenv_without_overriding_shell(tmp_path, monkeypatch):
+    for name in ("ADAPTION_API_KEY", "ADAPTION_CHRONOS_MODEL_ID", "ADAPTION_ALLOW_UPLOAD"):
+        monkeypatch.delenv(name, raising=False)
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("# comment\nADAPTION_API_KEY='from-file'\nexport ADAPTION_CHRONOS_MODEL_ID=chronos-2\n")
+    monkeypatch.setenv("ADAPTION_ALLOW_UPLOAD", "0")
+    settings = AdaptionSettings.from_env(dotenv)
+    assert settings.api_key == "from-file" and settings.chronos_model_id == "chronos-2"
+    monkeypatch.setenv("ADAPTION_API_KEY", "from-shell")
+    assert AdaptionSettings.from_env(dotenv).api_key == "from-shell"
+
+
+def test_placeholder_key_counts_as_unset(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADAPTION_API_KEY", "your-adaption-api-key")
+    assert AdaptionSettings.from_env(None).api_key is None

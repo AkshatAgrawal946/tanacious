@@ -46,6 +46,25 @@ JOBS_DIR = Path("models/adaption_jobs")
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
 
+PLACEHOLDER_KEY = "your-adaption-api-key"  # the value in .env.example
+
+
+def load_dotenv(path: Path) -> None:
+    """Minimal ``.env`` reader (KEY=VALUE lines, # comments, optional quotes). Variables already set
+    in the environment win, so ``export`` in the shell overrides the file."""
+    path = Path(path)
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.removeprefix("export ").split("=", 1)
+        name, value = name.strip(), value.strip().strip("'\"")
+        if name and name not in os.environ:
+            os.environ[name] = value
+
+
 class AdaptionConfigError(RuntimeError):
     """Missing credentials, SDK or explicit permission."""
 
@@ -63,8 +82,14 @@ class AdaptionSettings:
     allow_paid_training: bool = False
 
     @classmethod
-    def from_env(cls) -> "AdaptionSettings":
-        return cls(api_key=os.environ.get("ADAPTION_API_KEY") or None,
+    def from_env(cls, dotenv: Path | None = Path(".env")) -> "AdaptionSettings":
+        """Settings from the environment, after filling unset variables from ``dotenv`` (if present)."""
+        if dotenv is not None:
+            load_dotenv(dotenv)
+        key = os.environ.get("ADAPTION_API_KEY") or None
+        if key == PLACEHOLDER_KEY:
+            key = None
+        return cls(api_key=key,
                    base_url=os.environ.get("ADAPTION_BASE_URL") or None,
                    chronos_model_id=os.environ.get("ADAPTION_CHRONOS_MODEL_ID") or None,
                    allow_upload=os.environ.get("ADAPTION_ALLOW_UPLOAD") == "1",
