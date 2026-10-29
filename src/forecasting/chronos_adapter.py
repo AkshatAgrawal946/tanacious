@@ -2,17 +2,12 @@
 
 Nothing heavy is imported at module import: torch and the model weights load on first use. Every
 failure to load or predict becomes ``ForecasterUnavailable`` so callers can fall back to a baseline
-and record why. Fine-tuning here runs locally (``Chronos2Pipeline.fit``); provider-hosted training
-lives in ``adaption_adapter.py``.
+and record why. The model is used zero-shot (no fine-tuning).
 """
 import concurrent.futures
-import json
 import logging
 import time
-from pathlib import Path
 from typing import Sequence
-
-import numpy as np
 
 from src.forecasting.interfaces import ForecasterUnavailable, ForecastRequest, ForecastResult, ForecastTimeout, validate_result
 
@@ -35,30 +30,12 @@ def select_device(requested: str = "cpu") -> str:
     return requested
 
 
-def verify_checkpoint(path: str | Path) -> dict:
-    """Check that a local directory holds a Chronos-2 model or a LoRA adapter for one."""
-    path = Path(path)
-    if not path.is_dir():
-        raise ForecasterUnavailable(f"checkpoint directory {path} does not exist")
-    if (path / "adapter_config.json").exists():
-        adapter = json.loads((path / "adapter_config.json").read_text())
-        return {"kind": "lora_adapter", "base_model": adapter.get("base_model_name_or_path")}
-    config_file = path / "config.json"
-    if not config_file.exists():
-        raise ForecasterUnavailable(f"{path} has no config.json or adapter_config.json")
-    config = json.loads(config_file.read_text())
-    if "chronos_config" not in config or "Chronos2" not in "".join(config.get("architectures", [])):
-        raise ForecasterUnavailable(f"{path} is not a Chronos-2 checkpoint (architectures={config.get('architectures')})")
-    return {"kind": "full_model", "context_length": config["chronos_config"].get("context_length"),
-            "architectures": config.get("architectures")}
-
-
 class ChronosForecaster:
-    def __init__(self, model_id_or_path: str = ZERO_SHOT_ID, name: str = "chronos2_zero_shot",
+    def __init__(self, model_id: str = ZERO_SHOT_ID, name: str = "chronos2_zero_shot",
                  version: str | None = None, device: str = "cpu", quantile_levels: Sequence[float] = (0.1, 0.5, 0.9),
                  timeout_s: float = 300.0, batch_size: int = 64, seed: int = 2026):
-        self.model_id_or_path, self.name = str(model_id_or_path), name
-        self.version = version or f"{self.model_id_or_path}"
+        self.model_id, self.name = model_id, name
+        self.version = version or model_id
         self.device_request, self.timeout_s, self.batch_size, self.seed = device, timeout_s, batch_size, seed
         self.quantile_levels = sorted(set(quantile_levels) | {0.5})
         self._pipeline = None
@@ -67,10 +44,6 @@ class ChronosForecaster:
     def load(self):
         if self._pipeline is not None:
             return self._pipeline
-        if Path(self.model_id_or_path).exists():
-            verify_checkpoint(self.model_id_or_path)
-        elif self.model_id_or_path.startswith((".", "/")) or self.model_id_or_path.startswith("models"):
-            raise ForecasterUnavailable(f"checkpoint {self.model_id_or_path} does not exist")
         try:
             import torch
             from chronos import Chronos2Pipeline
@@ -81,10 +54,10 @@ class ChronosForecaster:
         torch.manual_seed(self.seed)
         try:
             start = time.perf_counter()
-            self._pipeline = Chronos2Pipeline.from_pretrained(self.model_id_or_path, device_map=self.device)
-            log.info("loaded %s on %s in %.1fs", self.model_id_or_path, self.device, time.perf_counter() - start)
+            self._pipeline = Chronos2Pipeline.from_pretrained(self.model_id, device_map=self.device)
+            log.info("loaded %s on %s in %.1fs", self.model_id, self.device, time.perf_counter() - start)
         except Exception as error:  # network, missing weights, incompatible checkpoint
-            raise ForecasterUnavailable(f"could not load Chronos-2 from {self.model_id_or_path}: {error}") from error
+            raise ForecasterUnavailable(f"could not load Chronos-2 from {self.model_id}: {error}") from error
         return self._pipeline
 
     @staticmethod
@@ -127,31 +100,5 @@ class ChronosForecaster:
                 building=request.building, origin=request.origin, timestamps=request.forecast_index,
                 mean=by_level[0.5].copy(), quantiles=by_level,
                 model_name=self.name, model_version=self.version, latency_s=latency,
-                metadata={"device": self.device, "checkpoint": self.model_id_or_path})))
+                metadata={"device": self.device, "model_id": self.model_id})))
         return results
-
-
-def finetune_local(train_inputs: list[dict], validation_inputs: list[dict], known_covariates: list[str], horizon: int,
-                   context_steps: int, output_dir: str | Path, base_model: str = ZERO_SHOT_ID, mode: str = "lora",
-                   num_steps: int = 300, learning_rate: float = 1e-5, batch_size: int = 32, device: str = "cpu",
-                   seed: int = 2026) -> Path:
-    """Fine-tune Chronos-2 locally on prepared inputs and return the checkpoint directory.
-    Validation inputs select the best checkpoint by validation loss (no test data involved)."""
-    import torch
-    from chronos import Chronos2Pipeline
-    from chronos.chronos2.preprocess import from_list_of_dicts
-
-    np.random.seed(seed)  # Chronos2Dataset samples training windows with np.random
-    torch.manual_seed(seed)
-    device = select_device(device)
-    pipeline = Chronos2Pipeline.from_pretrained(base_model, device_map=device)
-    train = from_list_of_dicts(train_inputs, prediction_length=horizon, known_covariates_names=known_covariates)
-    validation = from_list_of_dicts(validation_inputs, prediction_length=horizon, known_covariates_names=known_covariates)
-    output_dir = Path(output_dir)
-    pipeline.fit(train, prediction_length=horizon, validation_inputs=validation, finetune_mode=mode,
-                 context_length=context_steps, learning_rate=learning_rate, num_steps=num_steps,
-                 batch_size=batch_size, output_dir=output_dir, min_past=horizon, seed=seed, data_seed=seed,
-                 remove_printer_callback=True)
-    checkpoint = output_dir / "finetuned-ckpt"
-    verify_checkpoint(checkpoint)
-    return checkpoint

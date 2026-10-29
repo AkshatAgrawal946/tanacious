@@ -15,7 +15,6 @@ from pathlib import Path
 import pandas as pd
 
 from src import provenance
-from src.forecasting import registry
 from src.forecasting.baselines import previous_day, previous_week
 from src.forecasting.chronos_adapter import ZERO_SHOT_ID, ChronosForecaster
 from src.forecasting.interfaces import FREQ, ForecasterUnavailable, ForecastRequest, ForecastResult
@@ -80,11 +79,7 @@ def build_forecaster(name: str, device: str = "cpu", train_forest=None):
         return train_forest()
     if name == "chronos2_zero_shot":
         return ChronosForecaster(ZERO_SHOT_ID, device=device)
-    record = registry.get(name)
-    ok, reason = registry.usable(record)
-    if not ok:
-        raise ForecasterUnavailable(f"{name}: {reason}")
-    return ChronosForecaster(record.location, name=name, version=record.version, device=device)
+    raise ForecasterUnavailable(f"unknown forecasting model {name!r}")
 
 
 def forecast_with_fallback(requests: list[ForecastRequest], requested: str | None = None, summary: dict | None = None,

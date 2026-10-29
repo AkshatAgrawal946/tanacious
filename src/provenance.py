@@ -16,7 +16,7 @@ from pathlib import Path
 import pandas as pd
 
 log = logging.getLogger(__name__)
-PACKAGES = ["numpy", "pandas", "scikit-learn", "torch", "chronos-forecasting", "transformers", "streamlit", "adaption"]
+PACKAGES = ["numpy", "pandas", "scikit-learn", "torch", "chronos-forecasting", "transformers", "streamlit"]
 
 
 def frame_fingerprint(*frames: pd.DataFrame) -> str:

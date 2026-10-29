@@ -1,5 +1,4 @@
 """Forecasting contracts, leakage guards, baselines, Chronos adapter (mocked), backtest and routing."""
-import json
 
 import numpy as np
 import pandas as pd
@@ -8,10 +7,9 @@ import pytest
 from src.forecasting import selection
 from src.forecasting.backtest import build_requests, run_benchmark
 from src.forecasting.baselines import RandomForestForecaster, previous_day, previous_week
-from src.forecasting.chronos_adapter import ChronosForecaster, verify_checkpoint
+from src.forecasting.chronos_adapter import ChronosForecaster
 from src.forecasting.config import ForecastExperimentConfig
-from src.forecasting.data_prep import (chronos_training_inputs, chronos_validation_inputs, forecast_origins,
-                                       make_request, validate_training_inputs)
+from src.forecasting.data_prep import forecast_origins, make_request
 from src.forecasting.interfaces import FREQ, ForecasterUnavailable, ForecastRequest, ForecastResult, ForecastTimeout, validate_result
 from src.generate_data import generate
 
@@ -121,28 +119,6 @@ def test_random_forest_forecaster_refuses_origins_inside_training():
 
 
 # -- data prep: splits ------------------------------------------------------------------------
-def test_training_inputs_stay_inside_their_split_and_split_on_long_gaps():
-    series = _series(days=60, missing=slice(2000, 2300))  # > 1 day gap splits the series
-    start, end = pd.Timestamp("2026-03-01"), pd.Timestamp("2026-04-15")
-    inputs = chronos_training_inputs({"B": series}, start, end, 96)
-    assert len(inputs) == 2
-    for item in inputs:
-        assert item["start"] >= start and item["start"] + len(item["target"]) * FREQ <= end
-        assert not np.isnan(item["target"]).all()
-    assert validate_training_inputs(inputs, 96, split_end=end) == []
-    assert validate_training_inputs(inputs, 96, split_end=pd.Timestamp("2026-03-20"))  # overlap is flagged
-
-
-def test_validation_targets_lie_inside_validation_split():
-    series = _series(days=60)
-    start, end = pd.Timestamp("2026-04-10"), pd.Timestamp("2026-04-20")
-    inputs = chronos_validation_inputs({"B": series}, start, end, 1344, 96, 96)
-    assert len(inputs) == 10
-    for item in inputs:
-        target_start = item["start"] + 1344 * FREQ
-        assert start <= target_start and target_start + 96 * FREQ <= end
-
-
 def test_forecast_origins_skip_windows_with_missing_targets():
     series = _series(days=30, missing=slice(20 * 96, 21 * 96))
     origins = forecast_origins(series, pd.Timestamp("2026-03-15"), pd.Timestamp("2026-03-25"), 96, 96, 1344, 0.5)
@@ -207,14 +183,9 @@ def test_chronos_timeout_is_explicit():
         _chronos(FakePipeline(delay=0.5), timeout_s=0.05).predict([_request()])
 
 
-def test_missing_checkpoint_is_unavailable(tmp_path):
-    with pytest.raises(ForecasterUnavailable):
-        ChronosForecaster(str(tmp_path / "nope")).load()
-    (tmp_path / "config.json").write_text(json.dumps({"architectures": ["T5Model"]}))
-    with pytest.raises(ForecasterUnavailable, match="not a Chronos-2 checkpoint"):
-        verify_checkpoint(tmp_path)
-    (tmp_path / "config.json").write_text(json.dumps({"architectures": ["Chronos2Model"], "chronos_config": {"context_length": 8192}}))
-    assert verify_checkpoint(tmp_path)["kind"] == "full_model"
+def test_unknown_model_is_unavailable():
+    with pytest.raises(ForecasterUnavailable, match="unknown forecasting model"):
+        selection.build_forecaster("no_such_model")
 
 
 # -- routing and fallback ----------------------------------------------------------------------
@@ -241,12 +212,6 @@ def test_provider_failure_falls_back_to_baseline_and_says_so(monkeypatch):
     assert chosen.results[0].model_name == "seasonal_previous_week"
 
 
-def test_unregistered_finetuned_model_is_unavailable(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.forecasting.registry.REGISTRY_PATH", tmp_path / "r.json")
-    with pytest.raises(ForecasterUnavailable, match="not registered"):
-        selection.build_forecaster("chronos2_finetuned_local")
-
-
 # -- benchmark on generated data ---------------------------------------------------------------
 @pytest.fixture(scope="module")
 def campus(tmp_path_factory):
@@ -268,7 +233,7 @@ def test_backtest_is_fair_repeatable_and_reports_unavailable_models(campus, monk
         def predict(self, requests):
             raise ForecasterUnavailable("weights not downloaded")
 
-    monkeypatch.setattr("src.forecasting.backtest.candidate_models", lambda config, include, finetuned: [Broken()])
+    monkeypatch.setattr("src.forecasting.backtest.candidate_models", lambda config, include: [Broken()])
     first = run_benchmark(_small_config(), interval, bills, output_dir=None)
     second = run_benchmark(_small_config(), interval, bills, output_dir=None)
     pd.testing.assert_frame_equal(first["scores"], second["scores"])

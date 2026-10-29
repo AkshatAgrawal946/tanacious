@@ -44,13 +44,12 @@
     ]
   },
   "config_hash": "d5075e51212d5234",
-  "created_at": "2026-10-29T11:33:29+00:00",
+  "created_at": "2026-10-29T12:02:34+00:00",
   "dataset_fingerprint": "efad85610ab87cff",
-  "default_model": "chronos2_finetuned_local",
+  "default_model": "chronos2_zero_shot",
   "environment": {
-    "git_commit": "38a9871-dirty",
+    "git_commit": "46e27ce-dirty",
     "packages": {
-      "adaption": null,
       "chronos-forecasting": "2.3.2",
       "numpy": "2.5.4",
       "pandas": "3.1.0",
@@ -64,26 +63,12 @@
   },
   "gate_split": "test",
   "gates": {
-    "chronos2_finetuned_local": {
-      "baseline": "seasonal_previous_week",
-      "candidate": "chronos2_finetuned_local",
-      "checks": {
-        "latency_ok": true,
-        "latency_s_per_forecast": 0.09347104513241598,
-        "peak_energy_ok": true,
-        "peak_timing_ok": true,
-        "relative_wape_improvement": 0.2588090768604667,
-        "wape_ok": true
-      },
-      "default_model": "chronos2_finetuned_local",
-      "promoted": true
-    },
     "chronos2_zero_shot": {
       "baseline": "seasonal_previous_week",
       "candidate": "chronos2_zero_shot",
       "checks": {
         "latency_ok": true,
-        "latency_s_per_forecast": 0.07879374583329385,
+        "latency_s_per_forecast": 0.07407531666491801,
         "peak_energy_ok": true,
         "peak_timing_ok": true,
         "relative_wape_improvement": 0.2505645092040208,
@@ -97,28 +82,28 @@
     "by_history_days": [
       {
         "history_days": 1,
-        "wape_pct": 15.434704147572841
+        "wape_pct": 15.516656382788948
       },
       {
         "history_days": 2,
-        "wape_pct": 9.131268519331448
+        "wape_pct": 9.32754575651463
       },
       {
         "history_days": 3,
-        "wape_pct": 8.090288900694027
+        "wape_pct": 8.244411786125596
       },
       {
         "history_days": 7,
-        "wape_pct": 5.796517362319811
+        "wape_pct": 6.497069582647141
       },
       {
         "history_days": 14,
-        "wape_pct": 5.240493175150627
+        "wape_pct": 5.282196845765203
       }
     ],
     "min_history_days": 14,
     "min_history_steps": 1344,
-    "model": "chronos2_finetuned_local",
+    "model": "chronos2_zero_shot",
     "rule": "shortest history with validation WAPE <= 1.05 x full-context WAPE",
     "status": "measured"
   },
@@ -130,103 +115,83 @@
   "runs": [
     {
       "forecasts": 62,
-      "latency_s_per_forecast": 0.001225240599934853,
+      "latency_s_per_forecast": 0.0011170483870251524,
       "model": "seasonal_previous_day",
       "model_version": "seasonal-96-v1",
-      "process_peak_rss_mb": 429.15625,
+      "process_peak_rss_mb": 426.828125,
       "split": "validation",
       "status": "measured",
-      "wall_time_s": 0.07596491719596088
+      "wall_time_s": 0.06925699999555945
     },
     {
       "forecasts": 62,
-      "latency_s_per_forecast": 0.0011246982556317121,
+      "latency_s_per_forecast": 0.0010854039048295348,
       "model": "seasonal_previous_week",
       "model_version": "seasonal-672-v1",
-      "process_peak_rss_mb": 429.3125,
+      "process_peak_rss_mb": 426.984375,
       "split": "validation",
       "status": "measured",
-      "wall_time_s": 0.06973129184916615
+      "wall_time_s": 0.06729504209943116
     },
     {
       "forecasts": 62,
-      "latency_s_per_forecast": 0.017922362226301863,
+      "latency_s_per_forecast": 0.015851147176187123,
       "model": "random_forest_forecast",
       "model_version": "rf-forecast-v1",
-      "process_peak_rss_mb": 429.953125,
+      "process_peak_rss_mb": 427.640625,
       "split": "validation",
       "status": "measured",
-      "wall_time_s": 1.1111864580307156
+      "wall_time_s": 0.9827711249236017
     },
     {
       "forecasts": 62,
-      "latency_s_per_forecast": 0.1617294563085682,
+      "latency_s_per_forecast": 0.14622605107949987,
       "model": "chronos2_zero_shot",
       "model_version": "amazon/chronos-2",
-      "process_peak_rss_mb": 1718.75,
+      "process_peak_rss_mb": 1622.34375,
       "split": "validation",
       "status": "measured",
-      "wall_time_s": 10.027226291131228
-    },
-    {
-      "forecasts": 62,
-      "latency_s_per_forecast": 0.11231545161365741,
-      "model": "chronos2_finetuned_local",
-      "model_version": "d5075e51212d5234-9ef79d50f35d6614",
-      "process_peak_rss_mb": 2199.28125,
-      "split": "validation",
-      "status": "measured",
-      "wall_time_s": 6.96355800004676
+      "wall_time_s": 9.066015166928992
     },
     {
       "forecasts": 60,
-      "latency_s_per_forecast": 0.0011030180690189202,
+      "latency_s_per_forecast": 0.0010941513852837186,
       "model": "seasonal_previous_day",
       "model_version": "seasonal-96-v1",
-      "process_peak_rss_mb": 2201.078125,
+      "process_peak_rss_mb": 1650.765625,
       "split": "test",
       "status": "measured",
-      "wall_time_s": 0.06618108414113522
+      "wall_time_s": 0.06564908311702311
     },
     {
       "forecasts": 60,
-      "latency_s_per_forecast": 0.0010905132008095582,
+      "latency_s_per_forecast": 0.0010843111008095245,
       "model": "seasonal_previous_week",
       "model_version": "seasonal-672-v1",
-      "process_peak_rss_mb": 2201.3125,
+      "process_peak_rss_mb": 1651.265625,
       "split": "test",
       "status": "measured",
-      "wall_time_s": 0.0654307920485735
+      "wall_time_s": 0.06505866604857147
     },
     {
       "forecasts": 60,
-      "latency_s_per_forecast": 0.017239752784371377,
+      "latency_s_per_forecast": 0.01609229235133777,
       "model": "random_forest_forecast",
       "model_version": "rf-forecast-v1",
-      "process_peak_rss_mb": 2201.890625,
+      "process_peak_rss_mb": 1664.984375,
       "split": "test",
       "status": "measured",
-      "wall_time_s": 1.0343851670622826
+      "wall_time_s": 0.9655375410802662
     },
     {
       "forecasts": 60,
-      "latency_s_per_forecast": 0.07879374583329385,
+      "latency_s_per_forecast": 0.07407531666491801,
       "model": "chronos2_zero_shot",
       "model_version": "amazon/chronos-2",
-      "process_peak_rss_mb": 2203.859375,
+      "process_peak_rss_mb": 1672.3125,
       "split": "test",
       "status": "measured",
-      "wall_time_s": 4.727624749997631
-    },
-    {
-      "forecasts": 60,
-      "latency_s_per_forecast": 0.09347104513241598,
-      "model": "chronos2_finetuned_local",
-      "model_version": "d5075e51212d5234-9ef79d50f35d6614",
-      "process_peak_rss_mb": 2205.421875,
-      "split": "test",
-      "status": "measured",
-      "wall_time_s": 5.608262707944959
+      "wall_time_s": 4.444518999895081
     }
   ],
   "selection_split": "validation",

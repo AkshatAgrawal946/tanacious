@@ -1,6 +1,6 @@
 """Rolling-origin forecasting benchmark (Task B).
 
-    python -m src.forecasting.backtest                 # baselines + zero-shot Chronos-2 (+ registered fine-tuned models)
+    python -m src.forecasting.backtest                 # baselines + zero-shot Chronos-2
     python -m src.forecasting.backtest --skip-chronos  # baselines only
 
 Protocol:
@@ -31,7 +31,6 @@ import pandas as pd
 
 from src import ml_model, provenance
 from src.data import load_data
-from src.forecasting import registry
 from src.forecasting.baselines import RandomForestForecaster, previous_day, previous_week
 from src.forecasting.chronos_adapter import ChronosForecaster
 from src.forecasting.config import ForecastExperimentConfig
@@ -140,40 +139,19 @@ def history_threshold(config: ForecastExperimentConfig, interval: pd.DataFrame, 
             "min_history_steps": threshold * 96, "rule": "shortest history with validation WAPE <= 1.05 x full-context WAPE"}
 
 
-def candidate_models(config: ForecastExperimentConfig, include_chronos: bool, finetuned: list[str]) -> list:
-    models = []
-    if include_chronos:
-        models.append(ChronosForecaster(config.chronos_model_id, device=config.device, quantile_levels=config.quantile_levels,
-                                        timeout_s=config.inference_timeout_s, seed=config.seed))
-    for name in finetuned:
-        record = registry.get(name)
-        ok, reason = registry.usable(record)
-        if not ok:
-            log.warning("fine-tuned model %s is not usable: %s", name, reason)
-            models.append(_Unavailable(name, reason))
-            continue
-        models.append(ChronosForecaster(record.location, name=name, version=record.version, device=config.device,
-                                        quantile_levels=config.quantile_levels, timeout_s=config.inference_timeout_s,
-                                        seed=config.seed))
-    return models
-
-
-class _Unavailable:
-    """Placeholder so a model that cannot run still appears in the report as not_run."""
-
-    def __init__(self, name: str, reason: str):
-        self.name, self.version, self.reason = name, "unavailable", reason
-
-    def predict(self, requests):
-        raise ForecasterUnavailable(self.reason)
+def candidate_models(config: ForecastExperimentConfig, include_chronos: bool) -> list:
+    if not include_chronos:
+        return []
+    return [ChronosForecaster(config.chronos_model_id, device=config.device, quantile_levels=config.quantile_levels,
+                              timeout_s=config.inference_timeout_s, seed=config.seed)]
 
 
 def run_benchmark(config: ForecastExperimentConfig, interval: pd.DataFrame, bills: pd.DataFrame,
-                  include_chronos: bool = True, finetuned: list[str] | None = None,
+                  include_chronos: bool = True,
                   output_dir: Path | None = OUTPUT_DIR) -> dict:
     fingerprint = provenance.dataset_fingerprint(interval, bills)
     forest = fit_random_forest(config, interval)
-    models = [previous_day(), previous_week(), forest, *candidate_models(config, include_chronos, finetuned or [])]
+    models = [previous_day(), previous_week(), forest, *candidate_models(config, include_chronos)]
     frames, runs = [], []
     for split in ("validation", "test"):
         pairs = build_requests(config, interval, split)
@@ -226,16 +204,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--config", default=str(CONFIG_PATH))
     parser.add_argument("--skip-chronos", action="store_true", help="baselines only (no torch / model download)")
-    parser.add_argument("--finetuned", nargs="*", default=None,
-                        help="registry names of fine-tuned Chronos-2 models (default: every verified local checkpoint)")
     parser.add_argument("--output", default=str(OUTPUT_DIR))
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     config = ForecastExperimentConfig.from_json(args.config) if Path(args.config).exists() else ForecastExperimentConfig()
-    finetuned = args.finetuned if args.finetuned is not None else [
-        name for name, record in registry.load().items() if record.kind == "local_checkpoint" and record.status == "verified"]
     interval, bills = load_data()
-    result = run_benchmark(config, interval, bills, include_chronos=not args.skip_chronos, finetuned=finetuned,
+    result = run_benchmark(config, interval, bills, include_chronos=not args.skip_chronos,
                            output_dir=Path(args.output))
     summary, scores = result["summary"], result["scores"]
     columns = ["wape_pct", "mae_kwh", "rmse_kwh", "peak_window_energy_error_pct", "peak_timing_error_min", "p10_p90_coverage"]

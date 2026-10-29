@@ -7,7 +7,7 @@ import streamlit as st  # type: ignore[import-not-found]
 
 from src import ml_model, provenance
 from src.data import load_data
-from src.forecasting import registry, selection
+from src.forecasting import selection
 from src.forecasting.backtest import fit_random_forest
 from src.forecasting.config import ForecastExperimentConfig
 from src.forecasting.data_prep import actuals, building_series, make_request
@@ -360,8 +360,7 @@ with forecast_tab:
     origin_day = f2.date_input("Forecast the day starting", default_origin.date(), min_value=first_origin.date(),
                                max_value=last_origin.date(), key="forecast_origin")
     default_model = (summary or {}).get("default_model", selection.FALLBACK_MODEL)
-    options = [None, "chronos2_zero_shot", "seasonal_previous_week", "seasonal_previous_day", "random_forest_forecast",
-               *[n for n, r in registry.load().items() if r.kind == "local_checkpoint" and r.status == "verified"]]
+    options = [None, "chronos2_zero_shot", "seasonal_previous_week", "seasonal_previous_day", "random_forest_forecast"]
     model_choice = f3.selectbox("Model", options, key="forecast_model",
                                 format_func=lambda m: f"Automatic ({default_model})" if m is None else m,
                                 help="Automatic uses the model that passed the benchmark's promotion gate, "
