@@ -94,7 +94,8 @@ data/raw/*.csv ──► src/data.py        validation report: errors block, war
                    src/provenance.py   dataset fingerprints, environment, JSON artifacts
                       ▼
                    src/simulate.py     what-if load shifting and trimming, tariff
-                   app.py              Streamlit: Campus overview · Building · Simulate
+                   src/backtest.py     test on uploaded meter data: hide, rebuild, score
+                   app.py              Streamlit: Campus overview · Building · Simulate · Test on your data
 ```
 
 ## Data contracts
@@ -138,7 +139,7 @@ Outputs: `data/processed/evaluation_metrics.csv`, `evaluation_15min.csv`, `recon
 
 ## Dashboard
 
-`python -m streamlit run app.py`. Tabs: **Campus overview** (all buildings stacked, monthly energy, summary table), **Building** (one line per selected month, 15-minute load, monthly energy, tested accuracy) and **Simulate** (what-if load shifting).
+`python -m streamlit run app.py`. Tabs: **Campus overview** (all buildings stacked, monthly energy, summary table), **Building** (one line per selected month, 15-minute load, monthly energy, tested accuracy), **Simulate** (what-if load shifting) and **Test on your data** (hide real readings, rebuild them, compare).
 
 **Simulate** (`src/simulate.py`) splits each building's load into a flat base load (5th percentile of 15-minute demand, never touched) and the flexible HVAC load above it, then applies a scenario to the selected months:
 
@@ -149,6 +150,17 @@ Outputs: `data/processed/evaluation_metrics.csv`, `evaluation_15min.csv`, `recon
 - *Colours*: every change is red when it is a loss (more peak, energy or cost), grey when nothing changes and green when it is a gain, in the metrics and the building table.
 
 It is a planning sketch on reconstructed load, not a controls model: it assumes buildings can store the moved cooling, and for bill-only buildings the flexible load is itself an estimate.
+
+**Test on your data** (`src/backtest.py`) checks the model on any meter export:
+
+1. *Upload* a CSV, or use the real campus file or the synthetic sample in one click. The file is read automatically and summarised in one line ("Found 7 meters · times from Timestamp · ..."); "Change how the file is read" holds the settings for when a guess is wrong: the date-and-time column, what each value is (energy per interval in kWh, average kW, or a running meter total), one column per meter or rows with a building-name column, an optional outdoor-temperature column, and day-first dates. Any delimiter and decimal commas are handled. Readings are put on the 15-minute grid. Each month's total stands in for the bill, so only months with at least 95% of their readings are used; the few missing readings in those months are interpolated and never scored or trained on.
+2. *Buildings*: a table gives each meter a building type (Hostel / dorm, Academic / classroom, Lab, Library) or *Leave out*. Types are guessed from the names (`lodging`, `dorm` -> hostel; `education`, `classroom` -> academic; ...); anything else (parking, offices, shops) starts as *Leave out*, since the model has no schedule for it. Up to 10 meters are kept: the model learns from all of them, and you pick one to test.
+3. *Hide* readings: random days, a date range, the same hours every day (e.g. 4-8 PM), or by dragging across the chart.
+4. *Rebuild*: the dashboard's Random Forest recipe is trained only on the readings left visible in the file (the campus-trained forest if nothing is left visible) and rebuilds the hidden ones so each month matches its total; kept readings come back unchanged. It is scored against the hidden real readings, and against the flat bill split, at the file's own resolution (hourly data is scored hourly). The comparison can be downloaded as CSV.
+
+**Real data to try**: `data/real/fox_campus_2017.csv`, hourly 2017 readings of seven buildings (classrooms, labs, dormitories, a library) on a US university campus, from the Building Data Genome Project 2 (CC BY-SA 4.0). `python -m src.real_data` re-downloads and re-cleans it; `data/real/README.md` has the source, cleaning and scores. On it the model beats the flat bill split for 13 of 14 meter tests (for example 9.4% vs 21.2% error on a classroom with 30% of days hidden); it does not know that campus's holidays.
+
+The sample file is the synthetic Academic block and Lab, so its near-perfect scores show how the test works, not real-world accuracy: the model's schedules were designed knowing the generator (see Limitations). When only the same hours are hidden every day, each month's total fixes their combined energy, so the 4-8 PM energy error is near zero by construction.
 
 Caches are keyed by content hashes of the input files and dataset plus the model version; a saved Random Forest is reused only if its metadata sidecar (`models/random_forest.meta.json`) matches the dataset fingerprint, model version, features, calendar and scikit-learn version. Accuracy badges are shown only if the stored evaluation was computed on the current data.
 
