@@ -9,9 +9,9 @@
 ## 📖 Overview
 **Tanacious** is a Data Integration & Load Imputation Engine designed to solve a fundamental energy blind spot for educational campuses. 
 
-Campuses often experience a sharp electricity demand spike between 4 PM and 8 PM on weekdays, precisely when rooftop solar generation begins to drop[cite: 1]. Facilities teams cannot safely shift or optimize this load due to a massive data gap: some buildings report granular 15-minute interval data, while others only report aggregate monthly utility bills[cite: 1]. 
+Campuses often experience a sharp electricity demand spike between 4 PM and 8 PM on weekdays, precisely when rooftop solar generation begins to drop. Facilities teams cannot safely shift or optimize this load due to a massive data gap: some buildings report granular 15-minute interval data, while others only report aggregate monthly utility bills. 
 
-*You cannot optimize what you cannot measure.*[cite: 1] Tanacious bridges this gap using machine learning to infer continuous 15-minute load curves for unmetered buildings, delivering a unified, real-time campus demand profile[cite: 1].
+*You cannot optimize what you cannot measure.* Tanacious bridges this gap using machine learning to infer continuous 15-minute load curves for unmetered buildings, delivering a unified, real-time campus demand profile.
 
 ---
 
