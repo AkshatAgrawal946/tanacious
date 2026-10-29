@@ -1,0 +1,44 @@
+{
+  "config_version": 1,
+  "buildings": [
+    "B3_Academic",
+    "B5_Lab"
+  ],
+  "context_steps": 1344,
+  "horizon_steps": 96,
+  "train": [
+    "2026-01-01",
+    "2026-08-01"
+  ],
+  "validation": [
+    "2026-08-01",
+    "2026-09-01"
+  ],
+  "test": [
+    "2026-09-01",
+    "2026-10-01"
+  ],
+  "origin_stride_steps": 96,
+  "max_missing_target_fraction": 0.5,
+  "quantile_levels": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "covariate_scenario": "calendar",
+  "seed": 2026,
+  "chronos_model_id": "amazon/chronos-2",
+  "device": "cpu",
+  "inference_timeout_s": 300.0,
+  "history_lengths_days": [
+    1,
+    2,
+    3,
+    7,
+    14
+  ],
+  "min_relative_wape_improvement": 0.1,
+  "max_peak_energy_error_regression_pct_points": 1.0,
+  "max_peak_timing_regression_min": 30.0,
+  "max_latency_s_per_forecast": 5.0
+}

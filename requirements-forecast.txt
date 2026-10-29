@@ -1,0 +1,8 @@
+# Optional: Chronos-2 forecasting (zero-shot inference and local LoRA fine-tuning).
+# The reconstruction workflow and the forecasting baselines run without these.
+-r requirements.txt
+torch>=2.9
+chronos-forecasting==2.3.2
+peft>=0.17
+# Optional: Adaption Labs provider integration (src/forecasting/adaption_adapter.py).
+adaption==0.16.0
