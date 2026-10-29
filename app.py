@@ -6,7 +6,7 @@ import pandas as pd  # type: ignore[import-not-found]
 import plotly.graph_objects as go  # type: ignore[import-not-found]
 import streamlit as st  # type: ignore[import-not-found]
 
-from src import ml_model, provenance
+from src import ml_model, provenance, uncertainty
 from src.data import load_data
 from src.evaluate import score_series
 from src.generate_data import generate
@@ -20,6 +20,7 @@ EVALUATION_META = PROCESSED_DIR / "evaluation_metrics.meta.json"
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 PEAK = "#e34948"
 BASE_LOAD = "#9aa0a6"  # neutral grey: critical load we never touch
+RANGE_FILL = "rgba(107,114,128,0.35)"
 FLEX_LOAD = "#2a78d6"  # blue: weather-dependent load that is safe to shift
 MAX_MONTHS = len(SERIES)
 
@@ -84,6 +85,37 @@ def tested_accuracy(dataset_fingerprint: str, evaluation_signature: str, months:
         return None
     scores = score_series(series[series["month"].isin(months)])
     return scores.set_index("building") if not scores.empty else None
+
+
+@st.cache_data
+def calibration(dataset_fingerprint: str, evaluation_signature: str) -> uncertainty.Calibration | None:
+    """Likely-range ratios from the same test run as the accuracy badges."""
+    series = evaluation_series(dataset_fingerprint, evaluation_signature)
+    return None if series is None else uncertainty.calibrate(series)
+
+
+def likely(low: float, high: float, unit: str = " kW", scale: float = 1.0, digits: int = 0) -> str:
+    """'likely 90-108 kW'; 'metered' when nothing was imputed; '' when there is no tested range or it
+    rounds to a single value (a mostly-metered building)."""
+    if np.isnan(low) or np.isnan(high):
+        return ""
+    if np.isclose(low, high):
+        return "metered"
+    low_text, high_text = f"{low * scale:,.{digits}f}", f"{high * scale:,.{digits}f}"
+    return "" if low_text == high_text else f"likely {low_text}-{high_text}{unit}"
+
+
+def add_likely_band(fig: go.Figure, x, low, high, showlegend: bool = True, hover: bool = True) -> None:
+    """Shaded P10-P90 range of the imputed load; nothing is drawn without a tested range."""
+    low, high = np.asarray(low, dtype=float), np.asarray(high, dtype=float)
+    if np.isnan(low).all() or np.allclose(low, high, equal_nan=True):
+        return
+    fig.add_trace(go.Scatter(x=x, y=high, mode="lines", line={"width": 0}, legendgroup="likely",
+                             showlegend=False, hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=x, y=low, mode="lines", line={"width": 0}, fill="tonexty", fillcolor=RANGE_FILL,
+                             name="Likely range (P10-P90)", legendgroup="likely", showlegend=showlegend,
+                             customdata=high, hoverinfo=None if hover else "skip",
+                             hovertemplate="likely %{y:,.0f}-%{customdata:,.0f} kW<extra></extra>" if hover else None))
 
 
 def month_label(month: str) -> str:
@@ -210,6 +242,14 @@ month_colors = {m: SERIES[i] for i, m in enumerate(months)}
 period = ", ".join(month_label(m) for m in months)
 
 rec = reconstruction(files_signature, fingerprint)
+evaluation_signature = provenance.file_fingerprint(PROCESSED_DIR / "evaluation_15min.csv", EVALUATION_META)
+cal = calibration(fingerprint, evaluation_signature)
+# LIKELY RANGES: only the AI-imputed part of the load is uncertain. Real readings stay as measured,
+# and bill totals are facts, so energy figures carry no range.
+rec = rec.assign(kW_imputed=rec["kW"].where(~rec["is_observed"], 0.0))
+rec["kW_low"], rec["kW_high"] = uncertainty.likely_range(cal and cal.interval, rec["kW_imputed"],
+                                                         rec["kW"] - rec["kW_imputed"], rec["building"],
+                                                         rec["timestamp"].dt.hour)
 selected = rec[rec["month"].isin(months)]
 
 campus_tab, building_tab = st.tabs([":material/apartment: Campus overview", ":material/domain: Building"])
@@ -221,10 +261,22 @@ with campus_tab:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Campus energy", f"{energy.sum() / 1000:,.1f} MWh", border=True, height="stretch",
               help="Sum of the monthly bills for the selected months.")
-    c2.metric("4-8 PM share", f"{selected.loc[peak_window, 'kWh_consumed'].sum() / selected['kWh_consumed'].sum():.1%}",
-              border=True, height="stretch")
-    c3.metric("Campus peak", f"{campus.max():,.0f} kW", delta=campus.idxmax().strftime("%d %b, %H:%M"),
-              delta_color="off", delta_arrow="off", border=True, height="stretch")
+    evening_kwh = selected.loc[peak_window, ["kW", "kW_imputed"]].sum() / 4
+    share_low, share_high = uncertainty.likely_range(cal and cal.peak_energy, evening_kwh["kW_imputed"],
+                                                     evening_kwh["kW"] - evening_kwh["kW_imputed"], uncertainty.CAMPUS)
+    total_kwh = selected["kWh_consumed"].sum()
+    c2.metric("4-8 PM share", f"{evening_kwh['kW'] / total_kwh:.1%}", border=True, height="stretch",
+              delta=likely(share_low / total_kwh, share_high / total_kwh, "%", 100, 1) or None,
+              delta_color="off", delta_arrow="off",
+              help="Likely range: how far a month's 4-8 PM energy has strayed from the model in testing (P10-P90).")
+    peak_at = campus.idxmax()
+    at_peak = selected.loc[selected["timestamp"] == peak_at, ["kW", "kW_imputed"]].sum()
+    peak_low, peak_high = uncertainty.likely_range(cal and cal.interval, at_peak["kW_imputed"],
+                                                   at_peak["kW"] - at_peak["kW_imputed"], uncertainty.CAMPUS, peak_at.hour)
+    c3.metric("Campus peak", f"{campus.max():,.0f} kW",
+              delta=" · ".join(filter(None, [peak_at.strftime("%d %b, %H:%M"), likely(peak_low, peak_high)])),
+              delta_color="off", delta_arrow="off", border=True, height="stretch",
+              help="Likely range: how far the campus total at this hour has strayed from the model in testing (P10-P90).")
     c4.metric("Biggest user", pretty(energy.idxmax()), delta=f"{energy.max() / energy.sum():.0%} of campus energy",
               delta_color="off", delta_arrow="off", border=True, height="stretch")
 
@@ -237,9 +289,14 @@ with campus_tab:
         fig.add_trace(go.Scatter(x=clock(rows["hour"]), y=rows["kW"], name=pretty(b), stackgroup="campus", mode="lines",
                                  line={"width": 0.5, "color": building_colors[b]}, fillcolor=building_colors[b],
                                  hovertemplate="%{y:,.0f} kW<extra>" + pretty(b) + "</extra>"))
+    campus_day = average_day(selected.groupby("timestamp")[["kW", "kW_imputed"]].sum().reset_index(), ["kW", "kW_imputed"])
+    add_likely_band(fig, clock(campus_day["hour"]), *uncertainty.likely_range(
+        cal and cal.average_day, campus_day["kW_imputed"], campus_day["kW"] - campus_day["kW_imputed"],
+        uncertainty.CAMPUS, campus_day["hour"].astype(int)))
     chart_card(f"Campus load on an average day · {period}",
                layout(fig, "Average power (kW)", axis_top(yearly)),
-               "Each band is one building; the top edge is the whole campus. "
+               "Each band is one building; the top edge is the whole campus, and the grey band around it is the "
+               "likely range of the imputed load. "
                "The y-axis is fixed to the busiest month of the year, so months can be compared by eye.")
 
     chart_card("Monthly energy by building", monthly_bars(bills, buildings, months, building_colors),
@@ -275,16 +332,24 @@ with building_tab:
     peak_row = own.loc[own["kW"].idxmax()]
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Billed energy", f"{own_bills['monthly_kWh'].sum():,.0f} kWh", border=True, height="stretch")
-    c2.metric("4-8 PM share", f"{own.loc[own['timestamp'].dt.hour.between(16, 19), 'kWh_consumed'].sum() / own['kWh_consumed'].sum():.1%}",
-              border=True, height="stretch")
-    c3.metric("Highest 15-min load", f"{peak_row.kW:,.0f} kW", delta=peak_row.timestamp.strftime("%d %b, %H:%M"),
-              delta_color="off", delta_arrow="off", border=True, height="stretch")
+    own_evening = own.loc[own["timestamp"].dt.hour.between(16, 19), ["kW", "kW_imputed"]].sum() / 4
+    own_low, own_high = uncertainty.likely_range(cal and cal.peak_energy, own_evening["kW_imputed"],
+                                                 own_evening["kW"] - own_evening["kW_imputed"], building)
+    own_kwh = own["kWh_consumed"].sum()
+    c2.metric("4-8 PM share", f"{own_evening['kW'] / own_kwh:.1%}", border=True, height="stretch",
+              delta=likely(own_low / own_kwh, own_high / own_kwh, "%", 100, 1) or None,
+              delta_color="off", delta_arrow="off",
+              help="Likely range: how far a month's 4-8 PM energy has strayed from the model in testing (P10-P90).")
+    c3.metric("Highest 15-min load", f"{peak_row.kW:,.0f} kW",
+              delta=" · ".join(filter(None, [peak_row.timestamp.strftime("%d %b, %H:%M"), likely(peak_row.kW_low, peak_row.kW_high)])),
+              delta_color="off", delta_arrow="off", border=True, height="stretch",
+              help="Likely range: how far a single imputed 15-minute interval at this hour has strayed from the model "
+                   "in testing (P10-P90). Real meter readings carry no range.")
     c4.metric("Real readings", f"{own['is_observed'].mean():.0%}", delta=meter_status[building],
               delta_color="off", delta_arrow="off", border=True, height="stretch")
 
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        accuracy = tested_accuracy(fingerprint, provenance.file_fingerprint(PROCESSED_DIR / "evaluation_15min.csv", EVALUATION_META),
-                                   tuple(months))
+        accuracy = tested_accuracy(fingerprint, evaluation_signature, tuple(months))
         if accuracy is not None and building in accuracy.index and own["is_reconstructed"].any():
             row = accuracy.loc[building]
             how = ("against the hidden true load" if row.evaluated_against == "hidden ground truth"
@@ -297,7 +362,7 @@ with building_tab:
     # the 5th percentile of 15-minute demand at any hour, capped at the average day's minimum so it is one
     # flat line under the whole curve (hostels dip lowest mid-day, when students are out, not overnight).
     # Everything above it is treated as flexible, weather-driven load (HVAC) that interventions may shift.
-    day = average_day(own, ["kW"])
+    day = average_day(own, ["kW", "kW_imputed"])
     base_kw = min(float(own["kW"].quantile(0.05)), float(day["kW"].min()))
     day["base"] = base_kw
     day["flexible"] = (day["kW"] - base_kw).clip(lower=0)
@@ -308,11 +373,13 @@ with building_tab:
     fig.add_trace(go.Scatter(x=clock(day["hour"]), y=day["flexible"], name="Flexible Load (HVAC)", stackgroup="load",
                              mode="lines", line={"width": 0.5, "color": FLEX_LOAD}, fillcolor=FLEX_LOAD,
                              hovertemplate="%{y:,.1f} kW<extra>Flexible (HVAC)</extra>"))
+    add_likely_band(fig, clock(day["hour"]), *uncertainty.likely_range(
+        cal and cal.average_day, day["kW_imputed"], day["kW"] - day["kW_imputed"], building, day["hour"].astype(int)))
     own_year = rec[rec["building"] == building]
     chart_card(f"{pretty(building)} · base vs. flexible load on an average day · {period}",
                layout(fig, "Average power (kW)", axis_top(average_day(own_year, ["kW"], ["month"])["kW"])),
                "Base load is the 5th percentile of 15-minute demand, held flat across the day; "
-               "everything above it is weather-dependent load.")
+               "everything above it is weather-dependent load. The grey band is the likely range of the imputed load.")
     peak = day.loc[day["kW"].idxmax()]
     peak_time = f"{int(peak.hour):02d}:{int(peak.hour % 1 * 60):02d}"
     st.info(f"**At the average-day peak ({peak_time}), {peak.base:,.0f} kW is critical base load** that stays untouched; "
@@ -320,17 +387,24 @@ with building_tab:
             "that is safe for load-shifting interventions.", icon=":material/shield:")
 
     fig = go.Figure()
+    for i, m in enumerate(months):
+        rows = own[own["month"] == m]
+        # Drawn per month so the band never bridges the gap between non-adjacent months.
+        add_likely_band(fig, rows["timestamp"], rows["kW_low"], rows["kW_high"], showlegend=i == 0, hover=False)
     for m in months:
         rows = own[own["month"] == m]
+        note = np.where(rows["is_observed"], " (metered)", [f" (likely {lo:,.0f}-{hi:,.0f})" if hi == hi else ""
+                                                          for lo, hi in zip(rows["kW_low"], rows["kW_high"])])
         fig.add_trace(go.Scattergl(x=rows["timestamp"], y=rows["kW"], name=month_label(m), mode="lines",
-                                   line={"width": 1, "color": month_colors[m]},
-                                   hovertemplate="%{x|%d %b %H:%M}: %{y:,.1f} kW<extra></extra>"))
+                                   line={"width": 1, "color": month_colors[m]}, text=note,
+                                   hovertemplate="%{x|%d %b %H:%M}: %{y:,.1f} kW%{text}<extra></extra>"))
     year_own = rec[rec["building"] == building]
     chart_card(f"{pretty(building)} · 15-minute load",
-               layout(fig, "Power (kW)", axis_top(year_own["kW"]),
+               layout(fig, "Power (kW)", axis_top(year_own["kW_high"].fillna(year_own["kW"])),
                       x_title="Date", peak_band=False),
                f"{int(own['is_observed'].sum()):,} of {len(own):,} intervals are real meter readings; the rest are "
-               "reconstructed and scaled so each month matches its bill.")
+               "reconstructed and scaled so each month matches its bill. The grey band is where the true load "
+               "likely sits (P10-P90 of the model's tested error); metered stretches have no band.")
 
     chart_card(f"{pretty(building)} · monthly energy", monthly_bars(bills, [building], months, building_colors),
                "Selected months are shown in full colour.")
