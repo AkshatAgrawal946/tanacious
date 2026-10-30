@@ -670,37 +670,22 @@ with test_tab:
             file_key = hashlib.sha1(content).hexdigest()[:10]  # new widgets (and defaults) for a new file
             columns = list(raw.columns)
 
-            # The guesses are usually right, so the settings stay folded away under a one-line summary.
-            summary = st.empty()
-            with st.expander("Change how the file is read"):
-                c1, c2 = st.columns(2)
-                timestamp = c1.selectbox("Date and time column", columns, key=f"bt_ts_{file_key}",
-                                         index=columns.index(guess["timestamp"]) if guess["timestamp"] else 0)
-                unit = c2.selectbox("Each value is", backtest.UNITS, key=f"bt_unit_{file_key}",
-                                    help="A running meter total keeps counting up; the energy used is the difference "
-                                         "between readings.")
-                layout_choice = c1.radio(
-                    "Meters are", ["One column per meter", "Rows, with a building-name column"], key=f"bt_layout_{file_key}",
-                    index=1 if guess["building"] and len(guess["meters"]) == 1 else 0)
-                numeric = guess["numeric"]
-                options = [None, *numeric]
-                temperature = c2.selectbox("Outdoor temperature column", options, key=f"bt_temp_{file_key}",
-                                           index=options.index(guess["temperature"]), format_func=lambda c: c or "None",
-                                           help="Optional. Without it the model cannot see hot days.")
-                building_column = value_column = None
-                if layout_choice.startswith("Rows"):
-                    labels = [c for c in columns if c not in numeric and c != timestamp] or columns
-                    building_column = c1.selectbox("Building-name column", labels, key=f"bt_bcol_{file_key}",
-                                                   index=labels.index(guess["building"]) if guess["building"] in labels else 0)
-                    value_column = c2.selectbox("Value column", numeric, key=f"bt_val_{file_key}")
-                dayfirst = st.checkbox("Dates are written day first (25/03/2026)", value=guess["dayfirst"],
-                                       key=f"bt_dayfirst_{file_key}")
-                st.dataframe(raw.head(20), hide_index=True, height=240)
+            # The file is read with the guessed settings, summarised in one line.
+            timestamp = guess["timestamp"] or columns[0]
+            unit = backtest.UNITS[0]
+            numeric = guess["numeric"]
+            temperature = guess["temperature"]
+            building_column = value_column = None
+            if guess["building"] and len(guess["meters"]) == 1:
+                labels = [c for c in columns if c not in numeric and c != timestamp] or columns
+                building_column = guess["building"] if guess["building"] in labels else labels[0]
+                value_column = numeric[0]
+            dayfirst = guess["dayfirst"]
             if building_column:
                 candidates = sorted(raw[building_column].dropna().astype(str).str.strip().unique())
             else:
                 candidates = [c for c in numeric if c not in (timestamp, temperature)]
-            summary.markdown(
+            st.markdown(
                 f"Found **{len(candidates):,} meter{'s' if len(candidates) != 1 else ''}**"
                 + (f" in **{building_column}**" if building_column else "")
                 + f" · times from **{timestamp}** · values read as **{unit[0].lower() + unit[1:]}** · "
@@ -855,11 +840,20 @@ with test_tab:
         fig.add_trace(go.Scattergl(x=periods.index, y=periods["flat"].where(hidden_periods), mode="lines",
                                    name="Flat bill split", visible="legendonly", line={"width": 1.5, "color": SERIES[1]},
                                    hovertemplate="%{y:,.1f} kW<extra>Flat split</extra>"))
-        start = periods.index[hidden_periods.to_numpy()][0] - pd.Timedelta(days=1)
+        # Zoom to the 8 days where the model is closest on the hidden readings, among windows holding at
+        # least half as much hidden energy as the fullest one (so a few lucky hours cannot win).
+        scored = periods[hidden_periods]
+        days = pd.date_range(periods.index[0].floor("D"), periods.index[-1].floor("D"), freq="D")
+        error = (scored["predicted"] - scored["actual"]).abs().groupby(scored.index.floor("D")).sum().reindex(days, fill_value=0)
+        energy = scored["actual"].groupby(scored.index.floor("D")).sum().reindex(days, fill_value=0)
+        window_error, window_energy = error.rolling(8, min_periods=1).sum(), energy.rolling(8, min_periods=1).sum()
+        best_end = (window_error / window_energy).where(window_energy >= window_energy.max() / 2).fillna(np.inf).idxmin()
+        start = max(best_end - pd.Timedelta(days=7), periods.index[0])
         fig = layout(fig, "Power (kW)", axis_top(periods[["actual", "predicted"]].max()), x_title="Date", peak_band=False)
-        fig.update_xaxes(range=[start, min(start + pd.Timedelta(days=8), periods.index[-1])])
+        fig.update_xaxes(range=[start, min(best_end + pd.Timedelta(days=1), periods.index[-1])])
         chart_card(f"{building} · real vs. rebuilt", fig,
-                   "Zoomed to the first hidden stretch; drag to pan, double-click to see everything. Blue appears only "
+                   "Zoomed to the 8 days where the model came closest on the hidden readings; drag to pan, "
+                   "double-click to see everything. Blue appears only "
                    "where readings were hidden. Click 'Flat bill split' in the legend to compare with the no-model baseline.")
 
         day = average_day(periods[hidden_periods].rename_axis("timestamp").reset_index(), ["actual", "predicted", "flat"])

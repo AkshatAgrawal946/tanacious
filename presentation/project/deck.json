@@ -1,0 +1,20 @@
+{
+  "v": 4,
+  "createdOnFiles": {"v": 1, "at": "2026-10-30T12:00:00Z"},
+  "lists": "css",
+  "title": "Tanacious — Judges Deck",
+  "order": ["cover", "problem", "how", "synergy-roles", "synergy", "utilisation", "headline", "realdata", "synthetic", "novelty", "limits", "demo", "close"],
+  "sections": {
+    "s1": {"description": "1 · Problem statement: campus demand peaks at 4–8 PM, and bill-only buildings hide it", "start": "cover"},
+    "s2": {"description": "2 · Proposed solution: rebuild 15-minute load from monthly bills", "start": "how"},
+    "s3": {"description": "3 · Proof of synergy: Human + AI beats either alone", "start": "synergy-roles"},
+    "s4": {"description": "4 · AI utilisation: model response, benchmarks and outcomes", "start": "utilisation"},
+    "s5": {"description": "5 · Novelty, limits and what’s next", "start": "novelty"},
+    "s6": {"description": "6 · Prototype demonstration and close", "start": "demo"}
+  },
+  "faces": {
+    "space-grotesk": {"family": "Space Grotesk", "href": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap"},
+    "ibm-plex-sans": {"family": "IBM Plex Sans", "href": "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&display=swap"}
+  },
+  "designSystems": []
+}

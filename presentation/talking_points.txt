@@ -1,0 +1,55 @@
+TANACIOUS: TALKING POINTS (short, in hackathon order)
+
+1. PROBLEM STATEMENT (cover, problem)
+- You can't optimise what you can't measure.
+- Campus demand spikes 4-8 PM on weekdays, just as solar drops.
+- Some buildings only send a monthly bill. An even split of that bill hides the spike.
+
+2. PROPOSED SOLUTION (how)
+- Rebuilds a 15-minute load curve for every bill-only building.
+- Learn the shape: a Random Forest uses building schedule, weekends, breaks and temperature. No clock time.
+- Match the bill: every month adds up to its bill, within 0.01 kWh.
+- Keep real readings: meter data comes back unchanged (0 kWh change). Only gaps are filled.
+
+3. PROOF OF SYNERGY: (Human + AI) >= (Human, AI) (synergy-roles, synergy)
+- Human brings: building routines, weekend/vacation habits, academic calendar, the bill.
+- AI brings: how load really responds to heat, weekends and breaks, learned from every 15-min reading.
+- Measured, same hidden readings, only the shape changes (mean WAPE):
+  Synthetic: Human 14.8% | AI 20.6% | Human+AI 7.3%
+  Real, 30% days hidden: Human 24.2% | AI 16.3% | Human+AI 9.7%
+  Real, no meter at all: Human 24.7% | AI 17.2% | Human+AI 12.6%
+  Real, 4-8 PM energy: Human 13.6% | AI 6.2% | Human+AI 2.5%
+- Human+AI beat both alone on 12 of 12 buildings. Fully unmetered: 6 of 7 (real library: human alone 28.6% vs 32.5%).
+- Why each fails alone: human guesses ignore weather; AI alone copies metered buildings' clock times onto other types.
+- Reproduce: PYTHONPATH=. python presentation/synergy_ablation.py synthetic | 0.3 | 1.0
+
+4. AI UTILISATION: MODEL RESPONSE, BENCHMARKS, OUTCOMES (utilisation, headline, realdata, synthetic)
+- Model: Random Forest, 100 trees, 14 inputs, laptop CPU.
+- Response: per building, a 15-min curve, its tested accuracy and a likely range.
+- Real data: 7 buildings on a US university campus (BDG2, 2017). Beat the flat bill split in 13 of 14 tests.
+- Classroom: 9.4% vs 21.2% error. Library: 21.4% vs 40.1%.
+- Synthetic: 0.2-4.6% error on 4-8 PM energy. Peak hour right for 4 of 5 buildings.
+- 25% of days metered: 7.5% error vs 28.6% for a flat split.
+- Outcome: pre-cool 25% earlier, campus peak -4.6% in an average month.
+
+5. NOVELTY (novelty, limits)
+- Locked to the bill; real readings never altered.
+- Human knowledge as model input; no clock time, so it transfers to unmetered building types.
+- Built to be checked: hide real readings, rebuild, compare, in the dashboard.
+- No new hardware: bills plus a few temporary pilot meters.
+- Limits (say them first): synthetic scores are optimistic; doesn't know another campus's holidays;
+  real library peaked at midday, not evening; Simulate is a planning sketch, not a forecast.
+- Next: campus calendars, schedules learned from data, real billing periods.
+
+6. PROTOTYPE DEMONSTRATION (demo, close)
+- Campus overview: who drives the peak.
+- Building: one curve, its accuracy and likely range.
+- Simulate: pre-cool 25% earlier, campus peak -4.6% in an average month.
+- Test on your data: hide real readings, rebuild, compare. "Check us before you trust us."
+- Close: bills in, 15-minute picture out. Matches the bill, never alters a real reading, checkable on your own data.
+
+QUICK ANSWERS
+- Why Random Forest? Non-linear, fast on a CPU, needs little data.
+- Overfitting? Buildings held out, no tuning on test scenarios, tested on another campus.
+- Bad bill? Rejected with clear errors, never quietly accepted.
+- Forecasting? No. It rebuilds finished months only.

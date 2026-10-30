@@ -1,0 +1,24 @@
+<section id="synergy-roles" data-transition="fade" style="background:#F7F5EF;color:#14213D;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:space-between;gap:48px">
+<div style="display:flex;flex-direction:column;gap:24px">
+<p style="font-size:24px;font-weight:600;color:#A65200;letter-spacing:4px;text-transform:uppercase">03 · Proof of synergy · what each side brings</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1">People bring the routine, AI learns the response</h2>
+</div>
+<div style="display:flex;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#FFFFFD;padding:40px;border:1px solid #E2DED3;border-top:8px solid #BFC8D6;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.15">Human</h3>
+<p style="font-size:32px;line-height:1.4;color:#4A5568">Building schedules, weekend and vacation habits, the academic calendar, the bill.</p>
+<p style="font-size:24px;line-height:1.4;color:#14213D"><b>Alone: 24% error.</b> Rough guesses miss the weather and the real timing.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#FFFFFD;padding:40px;border:1px solid #E2DED3;border-top:8px solid #BFC8D6;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.15">AI</h3>
+<p style="font-size:32px;line-height:1.4;color:#4A5568">Learns from every 15-minute reading how load bends with heat, weekends and breaks.</p>
+<p style="font-size:24px;line-height:1.4;color:#14213D"><b>Alone: 16% error.</b> It copies the metered buildings’ timing onto every other type.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#FFFFFD;padding:40px;border:1px solid #E2DED3;border-top:8px solid #F28C28;border-radius:16px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.15">Human + AI</h3>
+<p style="font-size:32px;line-height:1.4;color:#4A5568">People set the routine and the total. AI learns how the load responds.</p>
+<p style="font-size:24px;line-height:1.4;color:#A65200"><b>Together: 9.7% error,</b> better than either alone on every building tested.</p>
+</div>
+</div>
+<aside>The split of work. The facilities team knows things no meter records: each building type’s rough daily routine, how busy it stays at weekends and in vacations, the academic calendar, and the monthly bill. The AI, a Random Forest, learns from every real 15-minute reading how load actually responds to heat, weekends and breaks. Alone, the human estimates are rough and ignore weather: 24% error on real meters. Alone, the AI has nothing to tell building types apart except clock time, so it copies the metered buildings’ timing onto unmetered ones: 16%. Together: 9.7%. Errors are mean WAPE on the real campus with 30% of days hidden.</aside>
+</section>

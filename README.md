@@ -83,7 +83,7 @@ A campus electricity prototype that reconstructs 15-minute electricity profiles 
 ```bash
 python -m venv .venv && source .venv/bin/activate      # Windows: .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m src.generate_data                              # synthetic 2026 campus data -> data/raw/
+python -m src.generate_data                              # synthetic 2026 campus data -> data/raw/ (new random seed each run; --seed N to reproduce)
 python -m src.pipeline                                   # train, reconstruct, evaluate
 python -m streamlit run app.py                           # dashboard (or .\run_app.ps1 on Windows)
 pytest -q                                                # tests
@@ -163,7 +163,7 @@ It is a planning sketch on reconstructed load, not a controls model: it assumes 
 
 **Test on your data** (`src/backtest.py`) checks the model on any meter export:
 
-1. *Upload* a CSV, or use the real campus file or the synthetic sample in one click. The file is read automatically and summarised in one line ("Found 7 meters · times from Timestamp · ..."); "Change how the file is read" holds the settings for when a guess is wrong: the date-and-time column, what each value is (energy per interval in kWh, average kW, or a running meter total), one column per meter or rows with a building-name column, an optional outdoor-temperature column, and day-first dates. Any delimiter and decimal commas are handled. Readings are put on the 15-minute grid. Each month's total stands in for the bill, so only months with at least 95% of their readings are used; the few missing readings in those months are interpolated and never scored or trained on.
+1. *Upload* a CSV, or use the real campus file or the synthetic sample in one click. The file is read automatically and summarised in one line ("Found 7 meters · times from Timestamp · ..."): the date-and-time column, one column per meter or rows with a building-name column, an optional outdoor-temperature column and day-first dates are all guessed, and values are read as energy per interval in kWh. Any delimiter and decimal commas are handled. Readings are put on the 15-minute grid. Each month's total stands in for the bill, so only months with at least 95% of their readings are used; the few missing readings in those months are interpolated and never scored or trained on.
 2. *Buildings*: a table gives each meter a building type (Hostel / dorm, Academic / classroom, Lab, Library) or *Leave out*. Types are guessed from the names (`lodging`, `dorm` -> hostel; `education`, `classroom` -> academic; ...); anything else (parking, offices, shops) starts as *Leave out*, since the model has no schedule for it. Up to 10 meters are kept: the model learns from all of them, and you pick one to test.
 3. *Hide* readings: random days, a date range, the same hours every day (e.g. 4-8 PM), or by dragging across the chart.
 4. *Rebuild*: the dashboard's Random Forest recipe is trained only on the readings left visible in the file (the campus-trained forest if nothing is left visible) and rebuilds the hidden ones so each month matches its total; kept readings come back unchanged. It is scored against the hidden real readings, and against the flat bill split, at the file's own resolution (hourly data is scored hourly). The comparison can be downloaded as CSV.

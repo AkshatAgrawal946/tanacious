@@ -1,4 +1,9 @@
-"""Create deterministic synthetic data for the Missing Meter demo: one calendar year (2026)."""
+"""Create synthetic data for the Missing Meter demo: one calendar year (2026).
+
+`generate()` is deterministic for a given seed; running the module draws a fresh seed each time
+(printed, so a run can be reproduced with `--seed`).
+"""
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -6,7 +11,7 @@ import pandas as pd
 
 from src.campus_calendar import is_break
 
-SEED = 42
+SEED = 43
 START, END = "2026-01-01", "2026-12-31 23:45"
 BUILDINGS = {
     "B1_Hostel_A": ("hostel", 40, 60),
@@ -110,5 +115,10 @@ def generate(output_dir: str | Path = "data/raw", seed: int = SEED) -> tuple[pd.
 
 
 if __name__ == "__main__":
-    interval, bills, _ = generate()
-    print(f"Generated {len(interval):,} interval observations and {len(bills):,} monthly bills.")
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--seed", type=int, help="reproduce an earlier run (default: a new random seed)")
+    seed = parser.parse_args().seed
+    if seed is None:
+        seed = int(np.random.SeedSequence().entropy % 2**32)
+    interval, bills, _ = generate(seed=seed)
+    print(f"Seed {seed}. Generated {len(interval):,} interval observations and {len(bills):,} monthly bills.")

@@ -1,0 +1,16 @@
+<section id="synergy" data-transition="fade" style="background:#F7F5EF;color:#14213D;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:24px">
+<p style="font-size:24px;font-weight:600;color:#A65200;letter-spacing:4px;text-transform:uppercase">03 · Proof of synergy · (Human + AI) ≥ (Human, AI)</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1">Human + AI beat both alone on 12 of 12 buildings</h2>
+</div>
+<table style="font-size:28px;color:#14213D;font-family:'IBM Plex Sans', Arial, sans-serif">
+<tr style="background:#E9E5DA"><th style="width:46%;text-align:left">Test (mean error)</th><th style="width:17%;text-align:right">Human only</th><th style="width:17%;text-align:right">AI only</th><th style="width:20%;text-align:right">Human + AI</th></tr>
+<tr><td>Synthetic campus, 5 buildings</td><td style="text-align:right">14.8%</td><td style="text-align:right">20.6%</td><td style="text-align:right;color:#A65200"><b>7.3%</b></td></tr>
+<tr><td>Real campus, 30% of days hidden</td><td style="text-align:right">24.2%</td><td style="text-align:right">16.3%</td><td style="text-align:right;color:#A65200"><b>9.7%</b></td></tr>
+<tr><td>Real campus, no meter at all</td><td style="text-align:right">24.7%</td><td style="text-align:right">17.2%</td><td style="text-align:right;color:#A65200"><b>12.6%</b></td></tr>
+<tr><td>Real campus, 4–8 PM energy</td><td style="text-align:right">13.6%</td><td style="text-align:right">6.2%</td><td style="text-align:right;color:#A65200"><b>2.5%</b></td></tr>
+</table>
+<p style="font-size:24px;line-height:1.4;color:#4A5568;width:1500px">Human only: the facilities team’s schedule estimates, scaled to the bill. AI only: the same Random Forest on weather, calendar and clock time, with no human inputs.</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#4A5568">WAPE on hidden readings, lower is better · Real campus: 7 meters, Building Data Genome Project 2, CC BY-SA 4.0</p>
+<aside>This is the synergy proof, measured rather than claimed. Same buildings, same hidden readings, same bill reconciliation; only the shape changes. Human only uses the facilities schedules scaled to each bill. AI only is the same Random Forest given weather, calendar and clock time but none of the human knowledge. Human plus AI is Tanacious. It beats both on all 5 synthetic buildings and all 7 real meters with 30% of days hidden, 12 of 12. With a building fully unmetered it still wins on 6 of 7; the exception is the real library, where the human estimate alone did slightly better, 28.6 versus 32.5 percent. On the 4–8 PM window that matters most, error falls to 2.5 percent, against 6.2 for AI alone and 13.6 for human alone.</aside>
+</section>
